@@ -1,0 +1,1842 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MaiLuo · UI Demo</title>
+    <style>
+        /* ============ Claude.ai 官网配色体系 ============ */
+        :root {
+            --bg-main: #FAF9F5;
+            --bg-sidebar: #F0EEE6;
+            --bg-card: #FFFFFF;
+            --bg-hover: #E8E6DC;
+            --text-primary: #1F1E1D;
+            --text-secondary: #83827D;
+            --border: #E3E0D6;
+            --accent: #D97757;
+            --accent-dark: #C15F3C;
+            --accent-soft: rgba(217, 119, 87, 0.10);
+            --green: #5F7D58;
+            --green-soft: rgba(125, 155, 118, 0.15);
+            --blue: #5A6E8C;
+            --blue-soft: rgba(90, 110, 140, 0.12);
+            --amber: #B08034;
+            --amber-soft: rgba(199, 152, 66, 0.15);
+            --red: #B54A35;
+            --red-soft: rgba(181, 74, 53, 0.08);
+            --terminal-bg: #2B2926;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+                         'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            line-height: 1.6;
+            font-size: 14px;
+            overflow: hidden;
+        }
+
+        h1, h2, h3, .serif {
+            font-family: Georgia, 'Times New Roman', 'Songti SC', 'SimSun', serif;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
+
+        body { display: flex; height: 100vh; }
+        .layout { display: flex; flex: 1; min-width: 0; }
+
+        /* ============================================================
+           Agent 终端面板（右侧停靠）
+        ============================================================ */
+        .agent-terminal {
+            position: relative; width: 420px; flex-shrink: 0;
+            display: flex; flex-direction: column;
+            border-left: 1px solid var(--border);
+            background: var(--bg-sidebar);
+        }
+        .agent-terminal.closed { display: none; }
+        .terminal-resize {
+            position: absolute; left: -3px; top: 0; bottom: 0; width: 7px;
+            cursor: ew-resize; z-index: 30;
+        }
+        .terminal-resize:hover { background: rgba(217, 119, 87, 0.25); }
+        .terminal-header {
+            display: flex; align-items: center; gap: 12px;
+            padding: 5px 12px; border-bottom: 1px solid var(--border);
+        }
+        .terminal-tabs { display: flex; gap: 4px; overflow-x: auto; min-width: 0; }
+        .terminal-tab {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 11.5px; font-weight: 600; padding: 3px 12px;
+            border-radius: 7px 7px 0 0; color: var(--text-secondary);
+            border: 1px solid transparent; cursor: pointer; flex-shrink: 0;
+            max-width: 150px; white-space: nowrap; overflow: hidden;
+            transition: all 0.15s;
+        }
+        .terminal-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+        .terminal-tab.active {
+            background: #fff; color: var(--accent-dark);
+            border: 1px solid var(--border); border-bottom-color: #fff;
+        }
+        .terminal-tab .tab-run {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--amber); animation: termPulse 1s infinite; flex-shrink: 0;
+        }
+        .terminal-status {
+            margin-left: auto; display: flex; align-items: center; gap: 6px;
+            font-size: 11px; color: var(--text-secondary);
+        }
+        .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #B3B0A6; }
+        .status-dot.running { background: var(--amber); animation: termPulse 1s infinite; }
+        .status-dot.done { background: var(--green); }
+        @keyframes termPulse { 50% { opacity: .3; } }
+        .terminal-actions { display: flex; gap: 2px; }
+        .t-btn {
+            width: 24px; height: 24px; border-radius: 6px; border: none;
+            background: transparent; color: var(--text-secondary); cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s;
+        }
+        .t-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .agent-terminal .terminal { flex: 1; min-height: 0; }
+
+        /* ============================================================
+           左栏 · 导航
+        ============================================================ */
+        .sidebar {
+            width: 232px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo { display: flex; align-items: center; gap: 10px; padding: 18px 16px 12px; }
+        .logo svg { width: 24px; height: 24px; }
+        .logo-name { font-size: 14.5px; font-weight: 600; }
+
+        .project-card {
+            margin: 4px 12px 10px; padding: 10px 12px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 10px; cursor: pointer;
+            display: flex; align-items: center; gap: 10px;
+            transition: border 0.15s, box-shadow 0.15s;
+        }
+        .project-card:hover { border-color: var(--accent); box-shadow: 0 2px 6px rgba(60,50,30,0.06); }
+        .project-card svg { width: 20px; height: 20px; color: var(--accent); flex-shrink: 0; }
+        .project-name { font-size: 13px; font-weight: 600; line-height: 1.3; }
+        .project-path {
+            font-size: 10.5px; color: var(--text-secondary);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;
+        }
+
+        .new-session-btn {
+            margin: 0 12px 10px; padding: 8px 12px;
+            display: flex; align-items: center; gap: 9px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 10px; cursor: pointer;
+            font-size: 13px; font-weight: 600; color: var(--text-primary);
+            transition: border 0.15s, box-shadow 0.15s;
+        }
+        .new-session-btn:hover { border-color: var(--accent); box-shadow: 0 2px 6px rgba(60, 50, 30, 0.06); }
+        .new-session-btn svg { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
+
+        .nav { flex: 1; padding: 4px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+        .nav-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 12px; color: var(--text-primary);
+            border-radius: 8px; cursor: pointer; font-size: 13px;
+            transition: background 0.15s;
+        }
+        .nav-item svg { width: 16px; height: 16px; color: var(--text-secondary); }
+        .nav-item:hover { background-color: var(--bg-hover); }
+        .nav-item.active { background-color: var(--accent-soft); color: var(--accent-dark); }
+        .nav-item.active svg { color: var(--accent-dark); }
+
+        .nav-section-title {
+            font-size: 10.5px; color: var(--text-secondary);
+            padding: 14px 12px 4px; text-transform: uppercase; letter-spacing: 0.06em;
+        }
+        .history-item {
+            padding: 7px 12px; border-radius: 8px; cursor: pointer;
+            color: var(--text-secondary); font-size: 12.5px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .history-item:hover { background-color: var(--bg-hover); color: var(--text-primary); }
+
+        .sidebar-footer { padding: 12px; border-top: 1px solid var(--border); }
+        .user-info { display: flex; align-items: center; gap: 10px; }
+        .avatar {
+            width: 30px; height: 30px; border-radius: 50%;
+            background-color: var(--accent); color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 600; font-size: 13px;
+        }
+        .user-name { font-size: 12.5px; font-weight: 500; }
+        .user-status { font-size: 11px; color: var(--green); }
+        .user-status::before { content: "●"; font-size: 7px; margin-right: 4px; vertical-align: 1px; }
+
+        /* ============================================================
+           中栏 · Vue 组件列表
+        ============================================================ */
+        .component-panel {
+            width: 248px;
+            border-right: 1px solid var(--border);
+            background: var(--bg-main);
+            display: flex; flex-direction: column;
+        }
+        .panel-header {
+            padding: 18px 16px 10px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .panel-header h2 { font-size: 14px; }
+        .panel-header-actions { display: flex; gap: 4px; }
+
+        .search-box { padding: 0 14px 10px; }
+        .search-box input {
+            width: 100%; background: var(--bg-card);
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 7px 10px 7px 30px; font-size: 12.5px; color: var(--text-primary);
+            transition: border 0.15s, box-shadow 0.15s;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 16 16' fill='none' stroke='%2383827D' stroke-width='1.6'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='M10.5 10.5L14 14'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: 10px center;
+        }
+        .search-box input:focus {
+            outline: none; border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+
+        .file-tree { flex: 1; overflow-y: auto; padding: 0 10px 12px; }
+        .tree-folder {
+            font-size: 11px; color: var(--text-secondary);
+            padding: 10px 8px 4px; letter-spacing: 0.03em;
+            display: flex; align-items: center; gap: 5px;
+        }
+        .tree-folder svg { width: 12px; height: 12px; }
+        .tree-file {
+            display: flex; align-items: center; gap: 8px;
+            padding: 7px 8px; border-radius: 8px; cursor: pointer;
+            color: var(--text-primary); font-size: 12.5px;
+            font-family: 'Cascadia Code', Consolas, monospace;
+            transition: background 0.12s;
+        }
+        .tree-file:hover { background: var(--bg-hover); }
+        .tree-file.active { background: var(--accent-soft); color: var(--accent-dark); font-weight: 500; }
+        .tree-file svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--text-secondary); }
+        .tree-file.active svg { color: var(--accent-dark); }
+        .tree-file .api-count {
+            margin-left: auto; font-size: 10px; color: var(--text-secondary);
+            background: var(--bg-hover); border-radius: 10px; padding: 0 7px;
+            font-family: -apple-system, sans-serif;
+        }
+        .tree-file.active .api-count { background: rgba(217,119,87,0.15); color: var(--accent-dark); }
+
+        /* ============================================================
+           右栏 · 详情页
+        ============================================================ */
+        .detail-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+        .detail-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 28px; border-bottom: 1px solid var(--border);
+            background: var(--bg-main);
+        }
+        .detail-title { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+        .detail-title h1 { font-size: 19px; display: flex; align-items: center; gap: 10px; }
+        .detail-path {
+            font-size: 11.5px; color: var(--text-secondary);
+            font-family: 'Cascadia Code', Consolas, monospace;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .detail-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+        .btn-primary {
+            background-color: var(--accent); color: #fff; border: none;
+            padding: 9px 20px; border-radius: 9px; font-size: 13.5px; font-weight: 600;
+            cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+            gap: 7px; transition: background 0.15s, opacity 0.15s;
+        }
+        .btn-primary:hover:not(:disabled) { background-color: var(--accent-dark); }
+        .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        .btn-icon {
+            width: 34px; height: 34px; border-radius: 8px;
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-secondary); cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s;
+        }
+        .btn-icon:hover { background-color: var(--bg-hover); color: var(--text-primary); }
+
+        .detail-body {
+            flex: 1; overflow-y: auto; padding: 20px 28px 32px;
+            display: flex; flex-direction: column; gap: 16px;
+        }
+
+        /* 待分析引导态 */
+        .pending-hero {
+            flex: 1; min-height: 300px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 14px;
+        }
+        .pending-hero svg { width: 40px; height: 40px; color: #CFCBBD; }
+        .pending-hero .file-badge {
+            font-family: 'Cascadia Code', Consolas, monospace;
+            background: var(--accent-soft); color: var(--accent-dark);
+            padding: 3px 12px; border-radius: 8px; font-size: 13px;
+        }
+        .pending-hero p { color: var(--text-secondary); font-size: 13.5px; }
+        .pending-hero .btn-primary { padding: 11px 34px; font-size: 14px; margin-top: 6px; }
+
+        /* ============================================================
+           功能页签（分段控制器）
+        ============================================================ */
+        .fn-tabs {
+            display: flex; align-items: center; gap: 4px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 11px; padding: 4px;
+            overflow-x: auto; flex-shrink: 0;
+        }
+        .fn-tab {
+            display: inline-flex; align-items: center; gap: 7px;
+            padding: 7px 14px; border-radius: 8px; border: none;
+            background: transparent; color: var(--text-primary);
+            font-size: 12.5px; font-weight: 500; cursor: pointer;
+            white-space: nowrap; transition: all 0.15s;
+        }
+        .fn-tab:hover { background: var(--bg-hover); }
+        .fn-tab.active {
+            background: var(--accent-soft); color: var(--accent-dark);
+            box-shadow: inset 0 0 0 1px rgba(217,119,87,0.25);
+        }
+        .fn-tab .m {
+            font-family: 'Cascadia Code', Consolas, monospace;
+            font-size: 9.5px; font-weight: 700; padding: 1px 5px;
+            border-radius: 4px; letter-spacing: 0.02em;
+        }
+        .fn-tab .m.get    { background: var(--green-soft); color: var(--green); }
+        .fn-tab .m.post   { background: var(--accent-soft); color: var(--accent-dark); }
+        .fn-tab .m.put    { background: var(--amber-soft); color: var(--amber); }
+        .fn-tab .m.delete { background: var(--red-soft); color: var(--red); }
+        .fn-tab .cnt {
+            font-size: 10px; color: var(--text-secondary);
+            background: var(--bg-hover); border-radius: 9px; padding: 0 6px;
+        }
+        .fn-tab.active .cnt { background: rgba(217,119,87,0.15); color: var(--accent-dark); }
+
+        /* 结果分区 */
+        .result-section {
+            background-color: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 14px; overflow: hidden;
+            box-shadow: 0 1px 3px rgba(60, 50, 30, 0.04);
+        }
+        .section-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 20px; border-bottom: 1px solid var(--border);
+        }
+        .section-header h2 { font-size: 14px; display: flex; align-items: center; gap: 7px; }
+        .section-header h2 svg { width: 14px; height: 14px; color: var(--accent); }
+        .section-header .sub {
+            font-size: 11px; color: var(--text-secondary); font-weight: 400;
+            font-family: -apple-system, sans-serif; margin-left: 4px;
+        }
+        .section-actions { display: flex; gap: 5px; }
+
+        .btn-icon-small {
+            width: 26px; height: 26px; border-radius: 6px;
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-secondary); cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s;
+        }
+        .btn-icon-small:hover {
+            background-color: var(--bg-hover); color: var(--accent-dark); border-color: var(--accent);
+        }
+        .btn-icon-small:disabled { opacity: .35; cursor: default; }
+        .btn-icon-small:disabled:hover {
+            background: transparent; color: var(--text-secondary); border-color: var(--border);
+        }
+
+        /* 布局操作提示 */
+        .graph-toast {
+            position: absolute; left: 50%; bottom: 12px;
+            transform: translateX(-50%) translateY(6px);
+            background: var(--text-primary); color: #FAF9F5; font-size: 12px;
+            padding: 7px 16px; border-radius: 8px; opacity: 0; pointer-events: none;
+            transition: opacity .25s, transform .25s; z-index: 5;
+            box-shadow: 0 4px 12px rgba(40, 30, 10, .25);
+        }
+        .graph-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        .stats { display: flex; gap: 22px; }
+        .stat-item { display: flex; flex-direction: column; }
+        .stat-label { font-size: 11px; color: var(--text-secondary); }
+        .stat-value { font-size: 19px; font-weight: 600; color: var(--accent-dark); font-family: Georgia, serif; }
+
+        /* 图例 */
+        .graph-legend {
+            display: flex; gap: 13px; padding: 8px 20px 0;
+            font-size: 11px; color: var(--text-secondary); flex-wrap: wrap;
+        }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .legend-dot { width: 9px; height: 9px; border-radius: 50%; }
+
+        .graph-container { width: 100%; height: 320px; background-color: var(--bg-main); }
+
+        /* 终端日志 */
+        .terminal {
+            background-color: var(--terminal-bg);
+            padding: 14px 18px; overflow-y: auto;
+            font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+            font-size: 12px; line-height: 1.9; color: #E8E4D9;
+        }
+        .terminal .t-line { opacity: 0; animation: lineIn 0.25s forwards; }
+        @keyframes lineIn { to { opacity: 1; } }
+        .t-cmd { color: #D97757; }
+        .t-ok { color: #8FB98A; }
+        .t-info { color: #C9C5B8; }
+        .t-dim { color: #8A867B; }
+        .t-hl { color: #E8B994; }
+        .cursor {
+            display: inline-block; width: 7px; height: 14px;
+            background: #D97757; vertical-align: -2px;
+            animation: blink 0.9s step-end infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* ============================================================
+           功能链路卡片（每功能一张）
+        ============================================================ */
+        .chain-list { padding: 14px 20px 18px; display: flex; flex-direction: column; gap: 12px; }
+        .chain-item {
+            background-color: var(--bg-main); border: 1px solid var(--border);
+            border-radius: 11px; padding: 13px 15px;
+            transition: border 0.15s, box-shadow 0.15s, opacity 0.4s, transform 0.4s;
+            opacity: 0; transform: translateY(12px);
+        }
+        .chain-item.show { opacity: 1; transform: translateY(0); }
+        .chain-item:hover { border-color: #CFCCC0; box-shadow: 0 2px 8px rgba(60, 50, 30, 0.06); }
+
+        .chain-header { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; cursor: pointer; }
+        .method {
+            padding: 2px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 700;
+            min-width: 42px; text-align: center; font-family: 'Cascadia Code', Consolas, monospace;
+        }
+        .method.get    { background: var(--green-soft); color: var(--green); }
+        .method.post   { background: var(--accent-soft); color: var(--accent-dark); }
+        .method.put    { background: var(--amber-soft); color: var(--amber); }
+        .method.delete { background: var(--red-soft); color: var(--red); }
+        .path { font-family: 'Cascadia Code', Consolas, monospace; font-size: 12.5px; }
+        .fn-name { font-size: 12.5px; font-weight: 600; }
+        .tag { padding: 2px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 500; }
+        .tag.success { background: var(--green-soft); color: var(--green); }
+        .tag.warning { background: var(--amber-soft); color: var(--amber); }
+        .tag.database { background: var(--blue-soft); color: var(--blue); }
+
+        /* 7 层横向链路条 o---o---o */
+        .bar {
+            display: flex; align-items: center; margin: 11px 0 4px;
+            overflow-x: auto; padding: 2px 0;
+        }
+        .bar-node {
+            width: 30px; height: 30px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; font-weight: 700; color: #fff;
+            flex-shrink: 0; position: relative; z-index: 1;
+            transition: transform 0.15s; cursor: default;
+        }
+        .bar-node:hover { transform: scale(1.15); }
+        .bar-node.vue  { background: #fff; color: var(--accent-dark); border: 2px solid var(--accent); }
+        .bar-node.api  { background: #C99B7A; }
+        .bar-node.http.get    { background: var(--green); }
+        .bar-node.http.post   { background: var(--accent); }
+        .bar-node.http.put    { background: var(--amber); }
+        .bar-node.http.delete { background: var(--red); }
+        .bar-node.check { background: var(--amber); }
+        .bar-node.logic { background: var(--accent); }
+        .bar-node.data  { background: var(--blue); }
+        .bar-link { width: 22px; height: 2px; background: #D4D1C4; position: relative; margin: 0 -1px; flex-shrink: 0; }
+        .bar-link::after {
+            content: ""; position: absolute; right: -1px; top: -3px;
+            border-left: 5px solid #D4D1C4; border-top: 4px solid transparent;
+            border-bottom: 4px solid transparent;
+        }
+        .bar-caption {
+            font-size: 10.5px; color: var(--text-secondary); margin-top: 2px;
+            font-family: 'Cascadia Code', Consolas, monospace;
+        }
+
+        .chain-desc { font-size: 12.5px; color: var(--text-secondary); margin: 6px 0 10px; }
+
+        /* 请求参数 */
+        .params-box {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 8px; padding: 9px 13px 6px; margin-bottom: 10px;
+        }
+        .params-title {
+            font-size: 11px; color: var(--text-secondary); font-weight: 600;
+            letter-spacing: .04em; margin-bottom: 5px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .params-title svg { width: 11px; height: 11px; color: var(--accent); }
+        .params-kind {
+            font-size: 10px; font-weight: 700; padding: 1px 7px;
+            border-radius: 5px; flex-shrink: 0;
+        }
+        .params-kind.path  { background: var(--blue-soft);   color: var(--blue); }
+        .params-kind.query { background: var(--green-soft);  color: var(--green); }
+        .params-kind.body  { background: var(--accent-soft); color: var(--accent-dark); }
+        .param-row {
+            display: flex; align-items: baseline; gap: 8px;
+            padding: 2.5px 0; flex-wrap: wrap;
+        }
+        .param-name {
+            font-family: 'Cascadia Code', Consolas, monospace; font-size: 11.5px;
+            color: var(--accent-dark); background: var(--accent-soft);
+            padding: 0 6px; border-radius: 4px;
+        }
+        .param-type {
+            font-family: 'Cascadia Code', Consolas, monospace;
+            font-size: 11px; color: var(--blue);
+        }
+        .param-req { font-size: 10px; padding: 0 5px; border-radius: 4px; font-weight: 500; }
+        .param-req.must { color: var(--amber); background: var(--amber-soft); }
+        .param-req.opt  { color: var(--text-secondary); }
+        .param-desc { color: var(--text-secondary); font-size: 11.5px; }
+
+        /* 展开的明细步骤 */
+        .chain-detail { display: none; }
+        .chain-item.expanded .chain-detail { display: block; }
+        .detail-steps {
+            background-color: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 8px; overflow: hidden; margin-bottom: 10px;
+        }
+        .step-row {
+            display: flex; align-items: flex-start; gap: 10px;
+            padding: 7px 13px; border-bottom: 1px solid var(--border);
+            font-size: 12.5px; transition: background 0.12s;
+        }
+        .step-row:last-child { border-bottom: none; }
+        .step-row:hover { background-color: var(--accent-soft); }
+        .step-idx {
+            font-family: Georgia, serif; font-size: 11px; color: var(--accent-dark);
+            font-weight: 700; width: 16px; flex-shrink: 0; text-align: right;
+        }
+        .step-body { display: flex; flex-direction: column; min-width: 0; }
+        .step-name { font-family: 'Cascadia Code', Consolas, monospace; }
+        .step-loc { font-size: 10.5px; color: var(--text-secondary); font-family: 'Cascadia Code', Consolas, monospace; }
+        .step-row.branched { background-color: var(--amber-soft); }
+        .branch-condition { font-size: 11.5px; color: var(--green); padding: 5px 13px 0 39px; }
+        .branch-condition-fail {
+            font-size: 11.5px; color: var(--red); padding: 5px 10px;
+            background-color: var(--red-soft); border-radius: 6px;
+            margin: 6px 0 6px 39px; display: inline-block;
+        }
+        .tx-badge {
+            font-size: 10.5px; color: var(--blue); background: var(--blue-soft);
+            padding: 1px 7px; border-radius: 5px; margin-left: 6px;
+            font-family: 'Cascadia Code', Consolas, monospace;
+        }
+
+        .chain-footer { display: flex; gap: 16px; padding-top: 9px; border-top: 1px solid var(--border); align-items: center; }
+        .btn-text { background: none; border: none; color: var(--accent-dark); cursor: pointer; font-size: 12.5px; padding: 0; }
+        .btn-text:hover { text-decoration: underline; }
+        .toggle-hint { margin-left: auto; font-size: 11px; color: var(--text-secondary); }
+
+        /* ============================================================
+           项目配置弹窗
+        ============================================================ */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(31, 30, 29, 0.45);
+            display: none; align-items: center; justify-content: center;
+            z-index: 100; backdrop-filter: blur(2px);
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            width: 540px; max-width: 92vw; background: var(--bg-card);
+            border-radius: 16px; box-shadow: 0 24px 64px rgba(40, 30, 10, 0.25);
+            animation: modalIn 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
+        }
+        @keyframes modalIn {
+            from { opacity: 0; transform: translateY(14px) scale(0.98); }
+            to { opacity: 1; transform: none; }
+        }
+        .modal-header {
+            padding: 22px 26px 0; display: flex;
+            justify-content: space-between; align-items: center;
+        }
+        .modal-header h2 { font-size: 17px; display: flex; align-items: center; gap: 9px; }
+        .modal-header h2 svg { width: 17px; height: 17px; color: var(--accent); }
+        .modal-close {
+            width: 30px; height: 30px; border-radius: 7px; border: none;
+            background: transparent; color: var(--text-secondary);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 16px; transition: all 0.15s;
+        }
+        .modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+        .modal-body { padding: 18px 26px 6px; }
+        .config-group { margin-bottom: 15px; }
+        .config-group label {
+            display: block; font-size: 12px; font-weight: 500;
+            margin-bottom: 6px; color: var(--text-secondary);
+        }
+        .config-group input {
+            width: 100%; background: var(--bg-main);
+            border: 1px solid var(--border); color: var(--text-primary);
+            padding: 9px 12px; border-radius: 8px; font-size: 13px;
+            font-family: 'Cascadia Code', Consolas, monospace;
+            transition: border 0.15s, box-shadow 0.15s;
+        }
+        .config-group input::placeholder { color: #B3B0A6; }
+        .config-group input:focus {
+            outline: none; border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+        .input-with-btn { display: flex; gap: 8px; }
+        .input-with-btn input { flex: 1; }
+
+        .btn-secondary {
+            background-color: var(--bg-card); color: var(--text-primary);
+            border: 1px solid var(--border); padding: 8px 14px; border-radius: 8px;
+            font-size: 12.5px; cursor: pointer; white-space: nowrap; transition: all 0.15s;
+        }
+        .btn-secondary:hover { background-color: var(--bg-hover); }
+
+        .modal-note {
+            font-size: 11.5px; color: var(--text-secondary);
+            background: var(--bg-main); border: 1px dashed var(--border);
+            border-radius: 8px; padding: 9px 12px; margin-bottom: 4px;
+            display: flex; gap: 7px; align-items: flex-start;
+        }
+        .modal-note svg { width: 13px; height: 13px; flex-shrink: 0; margin-top: 2px; color: var(--amber); }
+
+        .modal-footer {
+            padding: 12px 26px 22px; display: flex;
+            justify-content: flex-end; gap: 10px; align-items: center;
+        }
+        .btn-ghost {
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-primary); padding: 9px 18px; border-radius: 9px;
+            font-size: 13px; cursor: pointer; transition: all 0.15s;
+        }
+        .btn-ghost:hover { background: var(--bg-hover); }
+
+        /* 滚动条 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background-color: #D4D1C4; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background-color: #C0BCAC; }
+
+        @media (max-width: 1100px) { .component-panel { width: 210px; } }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <!-- ============ 左栏 · 导航 ============ -->
+        <aside class="sidebar">
+            <div class="logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#D97757" stroke-width="2.2" stroke-linecap="round">
+                    <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/>
+                </svg>
+                <span class="logo-name serif">MaiLuo</span>
+            </div>
+
+            <div class="project-card" id="project-card" title="点击配置项目">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M2.5 5.5c0-.6.4-1 1-1h4l1.5 2h7.5c.6 0 1 .4 1 1v7c0 .6-.4 1-1 1h-13c-.6 0-1-.4-1-1v-9z"/>
+                </svg>
+                <div style="min-width:0">
+                    <p class="project-name" id="pc-name">my-app</p>
+                    <p class="project-path" id="pc-path">D:\Projects\my-app</p>
+                </div>
+            </div>
+
+            <button class="new-session-btn" id="btn-new-session" title="开始一次新的链路分析">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                    <path d="M8 3v10M3 8h10"/>
+                </svg>
+                新会话
+            </button>
+
+            <nav class="nav">
+                <div class="nav-item active">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                        <circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/>
+                    </svg>
+                    <span>链路分析</span>
+                </div>
+                <div class="nav-item">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                        <path d="M4 5c0-1.1 2.7-2 6-2s6 .9 6 2-2.7 2-6 2-6-.9-6-2z"/>
+                        <path d="M4 5v10c0 1.1 2.7 2 6 2s6-.9 6-2V5"/>
+                        <path d="M4 10c0 1.1 2.7 2 6 2s6-.9 6-2"/>
+                    </svg>
+                    <span>项目库</span>
+                </div>
+                <div class="nav-item" id="nav-settings">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                        <circle cx="10" cy="10" r="2.5"/>
+                        <path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4"/>
+                    </svg>
+                    <span>项目配置</span>
+                </div>
+
+                <div class="nav-section-title">最近会话</div>
+                <div id="history-list">
+                    <div class="history-item" data-file="OrderList.vue">OrderList.vue · 4 个功能 · 昨天</div>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="avatar">F</div>
+                    <div>
+                        <p class="user-name">Frank</p>
+                        <p class="user-status">Claude Code 已连接</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ============ 中栏 · Vue 组件列表 ============ -->
+        <section class="component-panel">
+            <div class="panel-header">
+                <h2>Vue 组件</h2>
+                <div class="panel-header-actions">
+                    <button class="btn-icon-small" title="刷新列表">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                            <path d="M13.5 6.5A5.5 5.5 0 1 0 14 10"/><path d="M14 3.5v3h-3"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="search-box">
+                <input type="text" id="file-search" placeholder="搜索组件…" />
+            </div>
+            <div class="file-tree" id="file-tree">
+                <div class="tree-folder">
+                    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 1.5h2.5l1 1.5h3.5v7h-7v-8.5z"/></svg>
+                    views /
+                </div>
+                <div class="tree-file" data-file="UserProfile.vue" data-path="frontend/src/views/UserProfile.vue">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 1.5A.5.5 0 0 1 3.5 1h4l1.5 1.5H13a.5.5 0 0 1 .5.5v11a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5v-12z"/></svg>
+                    <span>UserProfile.vue</span>
+                </div>
+                <div class="tree-file active" data-file="OrderList.vue" data-path="frontend/src/views/OrderList.vue">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 1.5A.5.5 0 0 1 3.5 1h4l1.5 1.5H13a.5.5 0 0 1 .5.5v11a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5v-12z"/></svg>
+                    <span>OrderList.vue</span>
+                    <span class="api-count">4 API</span>
+                </div>
+                <div class="tree-folder">
+                    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 1.5h2.5l1 1.5h3.5v7h-7v-8.5z"/></svg>
+                    components /
+                </div>
+                <div class="tree-file" data-file="OrderTable.vue" data-path="frontend/src/components/OrderTable.vue">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 1.5A.5.5 0 0 1 3.5 1h4l1.5 1.5H13a.5.5 0 0 1 .5.5v11a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5v-12z"/></svg>
+                    <span>OrderTable.vue</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ 右栏 · 详情页 ============ -->
+        <main class="detail-panel">
+            <div class="detail-header">
+                <div class="detail-title">
+                    <h1 id="detail-name">OrderList.vue</h1>
+                    <span class="detail-path" id="detail-path">frontend/src/views/OrderList.vue</span>
+                </div>
+                <div class="detail-actions">
+                    <button class="btn-icon" title="终端面板" id="btn-terminal">
+                        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                            <rect x="2.5" y="3.5" width="15" height="13" rx="2"/>
+                            <path d="M5.5 8l2.5 2.5L5.5 13M10 13.5h4.5"/>
+                        </svg>
+                    </button>
+                    <button class="btn-icon" title="重置" id="btn-reset">
+                        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                            <path d="M16.5 8A6.5 6.5 0 1 0 17 12"/><path d="M17 4v4h-4"/>
+                        </svg>
+                    </button>
+                    <button class="btn-primary" id="btn-analyze">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                            <path d="M2.5 8s2.4-4.5 5.5-4.5S13.5 8 13.5 8s-2.4 4.5-5.5 4.5S2.5 8 2.5 8z"/>
+                            <circle cx="8" cy="8" r="2"/>
+                        </svg>
+                        <span id="btn-analyze-text">开始分析</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="detail-body" id="detail-body">
+                <!-- 状态一：待分析 -->
+                <div class="pending-hero" id="pending-hero">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+                        <path d="M4 6h16M4 12h10M4 18h13"/>
+                    </svg>
+                    <span class="file-badge" id="pending-badge">OrderList.vue</span>
+                    <p>由 Claude Code 静态阅读项目源码，按「业务功能」拆分：每个功能一条完整链路</p>
+                    <p style="font-size:12px;color:#B3B0A6">前端不变：Vue 事件 → API 封装 → HTTP 请求 → 后端按逻辑点展开：校验 → 业务处理 → 数据读写</p>
+                    <p id="pending-status" style="font-size:12.5px;color:var(--accent-dark);min-height:19px"></p>
+                    <button class="btn-primary" onclick="document.getElementById('btn-analyze').click()">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                            <path d="M2.5 8s2.4-4.5 5.5-4.5S13.5 8 13.5 8s-2.4 4.5-5.5 4.5S2.5 8 2.5 8z"/>
+                            <circle cx="8" cy="8" r="2"/>
+                        </svg>
+                        开始分析
+                    </button>
+                </div>
+
+                <!-- 状态二：结果（日志改为底部终端面板） -->
+
+                <div id="result-wrap" style="display:none; flex-direction:column; gap:16px">
+                    <!-- 功能页签 -->
+                    <div class="fn-tabs" id="fn-tabs"></div>
+
+                    <section class="result-section" style="position:relative">
+                        <div class="section-header">
+                            <h2>
+                                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                                    <circle cx="4" cy="10" r="2.2"/><circle cx="10" cy="10" r="2.2"/><circle cx="16" cy="10" r="2.2"/>
+                                    <path d="M6.2 10h1.6M12.2 10h1.6"/>
+                                </svg>
+                                链路可视化 <span class="sub" id="graph-sub">全部功能</span>
+                            </h2>
+                            <div class="section-actions">
+                                <button class="btn-icon-small" title="恢复默认布局" id="btn-layout-reset" disabled>
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                                        <path d="M13.5 6.5A5.5 5.5 0 1 0 14 10"/><path d="M14 3.5v3h-3"/>
+                                    </svg>
+                                </button>
+                                <button class="btn-icon-small" title="保存当前布局" id="btn-layout-save" disabled>
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                                        <path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5.5 2.5V6h5V2.5"/><path d="M5.5 13.5V9.5h5v4"/>
+                                    </svg>
+                                </button>
+                                <button class="btn-icon-small" title="查看分析日志" id="btn-log">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                                        <path d="M3 4l3 4-3 4M8 12h5"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="graph-toast" id="graph-toast"></div>
+                        <div class="graph-legend" id="graph-legend">
+                            <span class="legend-item"><span class="legend-dot" style="background:#fff;border:2px solid #D97757"></span>Vue 事件</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#C99B7A"></span>API 封装</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#5F7D58"></span>HTTP（按方法着色）</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#B08034"></span>参数校验</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#D97757"></span>业务逻辑</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#5A6E8C"></span>数据读写</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#B54A35"></span>异常分支</span>
+                        </div>
+                        <div id="graph-area"></div>
+                    </section>
+
+                    <section class="result-section">
+                        <div class="section-header">
+                            <h2>
+                                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
+                                    <path d="M4 4h12v12H4z"/><path d="M4 8h12M8 8v8"/>
+                                </svg>
+                                功能链路 <span class="sub" id="chain-sub">每个功能一条完整链路 · 点击卡片头部可切换</span>
+                            </h2>
+                            <div class="stats">
+                                <span class="stat-item"><span class="stat-label">功能</span><span class="stat-value" id="stat-fn">0</span></span>
+                                <span class="stat-item"><span class="stat-label">逻辑步骤</span><span class="stat-value" id="stat-svc">0</span></span>
+                                <span class="stat-item"><span class="stat-label">涉及类</span><span class="stat-value" id="stat-cls">0</span></span>
+                            </div>
+                        </div>
+                        <div class="chain-list" id="chain-list"></div>
+                    </section>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ============ Agent 终端面板（VSCode 式底部停靠） ============ -->
+    <div class="agent-terminal closed" id="agent-terminal">
+        <div class="terminal-resize" id="terminal-resize" title="拖动调整高度"></div>
+        <div class="terminal-header">
+            <div class="terminal-tabs" id="terminal-tabs"></div>
+            <div class="terminal-status">
+                <span class="status-dot" id="terminal-dot"></span>
+                <span id="terminal-status-text">空闲</span>
+            </div>
+            <div class="terminal-actions">
+                <button class="t-btn" id="terminal-new" title="新会话">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+                        <path d="M8 3.5v9M3.5 8h9"/>
+                    </svg>
+                </button>
+                <button class="t-btn" id="terminal-max" title="展开 / 还原">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                        <path d="M10 3h3v3M6 13H3v-3M13 3l-4.5 4.5M3 13l4.5-4.5"/>
+                    </svg>
+                </button>
+                <button class="t-btn" id="terminal-close" title="收起面板">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                        <path d="M3 6l5 5 5-5"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="terminal" id="terminal"></div>
+    </div>
+
+    <!-- ============ 项目配置弹窗 ============ -->
+    <div class="modal-overlay" id="config-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M2.5 5.5c0-.6.4-1 1-1h4l1.5 2h7.5c.6 0 1 .4 1 1v7c0 .6-.4 1-1 1h-13c-.6 0-1-.4-1-1v-9z"/>
+                    </svg>
+                    项目配置
+                </h2>
+                <button class="modal-close" id="modal-close">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="config-group">
+                    <label>项目根路径（包含前后端代码的文件夹）</label>
+                    <div class="input-with-btn">
+                        <input type="text" id="cfg-root" value="D:\Projects\my-app" />
+                        <button class="btn-secondary">浏览</button>
+                    </div>
+                </div>
+                <div class="config-group">
+                    <label>前端项目路径（相对根路径，留空则自动探测）</label>
+                    <div class="input-with-btn">
+                        <input type="text" id="cfg-frontend" value="frontend" placeholder="例：frontend / web / admin" />
+                        <button class="btn-secondary">浏览</button>
+                    </div>
+                </div>
+                <div class="config-group">
+                    <label>后端项目路径（相对根路径，留空则自动探测）</label>
+                    <div class="input-with-btn">
+                        <input type="text" id="cfg-backend" value="backend" placeholder="例：backend / server / api" />
+                        <button class="btn-secondary">浏览</button>
+                    </div>
+                </div>
+                <div class="modal-note">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="8" cy="8" r="6.2"/><path d="M8 7.5v3.5M8 5.2v.6"/>
+                    </svg>
+                    <span>分析由本机 Claude Code 终端完成，仅静态读取项目源码，不会修改任何文件；前后端路径未指定时将自动识别 package.json 与 pom.xml / build.gradle。</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-ghost" id="modal-cancel">取消</button>
+                <button class="btn-primary" id="modal-save" style="padding:9px 22px">保存配置</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    /* ================================================================
+       ECharts 多源加载（本地 → 国内 CDN → 国际 CDN 自动降级）
+    ================================================================ */
+    const ECHARTS_SOURCES = [
+        'echarts.min.js',
+        'https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js',
+        'https://cdn.staticfile.org/echarts/5.4.3/echarts.min.js',
+        'https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js',
+        'https://unpkg.com/echarts@5.4.3/dist/echarts.min.js'
+    ];
+    let echartsReadyCbs = null;
+    function ensureEcharts(cb) {
+        if (window.echarts) return cb(true);
+        if (echartsReadyCbs) { echartsReadyCbs.push(cb); return; }
+        echartsReadyCbs = [cb];
+        let i = 0, settled = false;
+        (function tryNext() {
+            if (settled) return;
+            if (window.echarts) return finish(true);
+            if (i >= ECHARTS_SOURCES.length) return finish(false);
+            const s = document.createElement('script');
+            let advanced = false;
+            const advance = () => { if (advanced) return; advanced = true; clearTimeout(s._timer); tryNext(); };
+            s.src = ECHARTS_SOURCES[i++];
+            s.onload = () => { if (window.echarts) finish(true); else advance(); };
+            s.onerror = advance;
+            s._timer = setTimeout(advance, 6000);
+            document.head.appendChild(s);
+        })();
+        function finish(ok) {
+            if (settled) return;
+            settled = true;
+            const cbs = echartsReadyCbs || [];
+            echartsReadyCbs = null;
+            cbs.forEach(fn => { try { fn(ok); } catch (e) { console.error(e); } });
+        }
+    }
+    ensureEcharts(() => {});
+
+    /* ================================================================
+       分析结果数据（按业务功能组织 —— Claude Code 的输出契约）
+       每个功能一条完整链：vue → api → http → ctrl → [check] → svc → repo → sql
+    ================================================================ */
+    const FUNCTIONS = [
+        {
+            id: 'list', name: '查询订单', method: 'get', url: '/api/order/list',
+            tag: ['success', '链路完整'], desc: '分页获取当前用户的订单列表',
+            front: [
+                { t: 'vue',  n: 'handleSearch()',          s: 'OrderList.vue · L88' },
+                { t: 'api',  n: 'getOrders(page, size)',   s: 'api/order.js · L12' },
+                { t: 'http', n: 'GET /api/order/list',     s: 'Query: page, size, keyword' },
+            ],
+            params: { query: [
+                { name: 'page',    type: 'number', req: true,  desc: '页码，默认 1' },
+                { name: 'size',    type: 'number', req: true,  desc: '每页条数，默认 20' },
+                { name: 'keyword', type: 'string', req: false, desc: '订单号 / 商品名模糊搜索' },
+            ]},
+            logic: [
+                { t: 'check', n: '校验分页参数',   where: 'OrderController.list() · L45' },
+                { t: 'logic', n: '获取当前用户',   where: 'SecurityUtils.currentUser() · L12' },
+                { t: 'logic', n: '按用户查订单',   where: 'OrderService.queryByUser() · L65' },
+                { t: 'data',  n: '组装明细 VO',    where: 'OrderAssembler.toVO() · L28 · SELECT' },
+                { t: 'data',  n: '返回订单列表',   where: 'OrderRepository.findByUserId() · L20' },
+            ],
+            cls: 5
+        },
+        {
+            id: 'create', name: '新增订单', method: 'post', url: '/api/order/create',
+            tag: ['warning', '含分支 · 事务'], desc: '创建订单：校验 → 算价 → 扣库存 → 落库，全程事务保护',
+            front: [
+                { t: 'vue',  n: 'handleSubmit()',         s: 'OrderList.vue · L96' },
+                { t: 'api',  n: 'createOrder(dto)',       s: 'api/order.js · L31' },
+                { t: 'http', n: 'POST /api/order/create', s: 'Body: skuId, quantity, address, remark' },
+            ],
+            params: { body: [
+                { name: 'skuId',    type: 'long',   req: true,  desc: '商品 SKU 编号' },
+                { name: 'quantity', type: 'int',    req: true,  desc: '购买数量，1~99' },
+                { name: 'address',  type: 'string', req: true,  desc: '收货地址' },
+                { name: 'remark',   type: 'string', req: false, desc: '订单备注' },
+            ]},
+            logic: [
+                { t: 'check', n: '校验订单参数',   where: 'OrderValidator.validate() · L12', branch: true },
+                { t: 'check', n: '校验库存充足',   where: 'StockService.checkStock() · L33', branch: true },
+                { t: 'logic', n: '计算订单总金额', where: 'OrderService.calcAmount() · L85' },
+                { t: 'logic', n: '扣减商品库存',   where: 'StockService.deductStock() · L40', tx: 'begin' },
+                { t: 'logic', n: '生成订单并保存', where: 'OrderService.saveOrder() · L72', tx: 'in' },
+                { t: 'data',  n: '写入订单明细',   where: 'OrderMapper.insertItems() · L57 · INSERT' },
+            ],
+            branchHtml: `<div class="branch-condition">✓ 校验通过 → 事务继续（扣库存 + 写订单 + 写明细）</div>
+                         <div class="branch-condition-fail">✗ 参数非法 → MethodArgumentNotValidException → 400</div>
+                         <div class="branch-condition-fail">✗ 库存不足 → OutOfStockException → 409，事务回滚</div>`,
+            cls: 4
+        },
+        {
+            id: 'update', name: '修改订单', method: 'put', url: '/api/order/{id}',
+            tag: ['success', '链路完整'], desc: '修改收货地址与备注（仅本人待支付订单，乐观锁并发控制）',
+            front: [
+                { t: 'vue',  n: 'handleEdit()',           s: 'OrderList.vue · L124' },
+                { t: 'api',  n: 'updateOrder(id, dto)',   s: 'api/order.js · L45' },
+                { t: 'http', n: 'PUT /api/order/{id}',    s: 'Path: id · Body: address, remark, version' },
+            ],
+            params: {
+                path: [ { name: 'id', type: 'long', req: true, desc: '订单 ID' } ],
+                body: [
+                    { name: 'address', type: 'string', req: true,  desc: '新收货地址' },
+                    { name: 'remark',  type: 'string', req: false, desc: '新备注' },
+                    { name: 'version', type: 'int',    req: true,  desc: '数据版本号（乐观锁）' },
+                ],
+            },
+            logic: [
+                { t: 'check', n: '校验订单归属',     where: 'OrderService.checkOwner() · L90' },
+                { t: 'check', n: '校验订单状态',     where: 'OrderService.checkStatus() · L94 · 仅待支付' },
+                { t: 'data',  n: '更新地址与备注',   where: 'OrderRepository.saveAndFlush() · L41 · 乐观锁 UPDATE' },
+            ],
+            cls: 2
+        },
+        {
+            id: 'delete', name: '删除订单', method: 'delete', url: '/api/order/{id}',
+            tag: ['success', '链路完整'], desc: '取消订单：逻辑删除主单与明细，并释放占用库存',
+            front: [
+                { t: 'vue',  n: 'handleDelete()',         s: 'OrderList.vue · L152' },
+                { t: 'api',  n: 'deleteOrder(id)',        s: 'api/order.js · L58' },
+                { t: 'http', n: 'DELETE /api/order/{id}', s: 'Path: id' },
+            ],
+            params: { path: [ { name: 'id', type: 'long', req: true, desc: '订单 ID' } ] },
+            logic: [
+                { t: 'check', n: '校验订单归属',   where: 'OrderService.checkOwner() · L90' },
+                { t: 'check', n: '校验可删除状态', where: 'OrderService.checkDeletable() · L102' },
+                { t: 'data',  n: '逻辑删除主单',   where: 'OrderRepository.markDeleted() · L55 · UPDATE' },
+                { t: 'data',  n: '级联删除明细',   where: 'OrderItemMapper.markDeleted() · L31 · UPDATE' },
+                { t: 'logic', n: '释放占用库存',   where: 'StockService.restoreStock() · L61', tx: 'in' },
+            ],
+            cls: 4
+        },
+    ];
+    const TOTALS = {
+        fn: FUNCTIONS.length,
+        svc: FUNCTIONS.reduce((a, f) => a + f.logic.length, 0),
+        cls: 9
+    };
+
+    const seq = fn => [...fn.front, ...fn.logic];
+    const stepLoc = s2 => s2.s || s2.where || '';
+    const BAR_LETTER = { vue: 'V', api: 'A', http: 'M' };
+    const BAR_TITLE = { vue: 'Vue 事件函数', api: 'API 封装', http: 'HTTP 请求', check: '参数校验', logic: '业务逻辑', data: '数据读写' };
+
+    /* ================================================================
+       Demo 状态机
+    ================================================================ */
+    const $ = id => document.getElementById(id);
+    let myChart = null;
+    let analyzing = false;
+    let currentFile = 'OrderList.vue';
+    let currentFn = 'all';
+
+    /* ---------- 弹窗 ---------- */
+    function openModal()  { $('config-modal').classList.add('open'); }
+    function closeModal() { $('config-modal').classList.remove('open'); }
+    $('project-card').addEventListener('click', openModal);
+    $('nav-settings').addEventListener('click', openModal);
+    $('modal-close').addEventListener('click', closeModal);
+    $('modal-cancel').addEventListener('click', closeModal);
+    $('config-modal').addEventListener('click', e => { if (e.target === $('config-modal')) closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+    $('modal-save').addEventListener('click', () => {
+        const root = $('cfg-root').value.trim() || '(未配置)';
+        $('pc-name').textContent = root.split(/[\\/]/).filter(Boolean).pop() || 'my-app';
+        $('pc-path').textContent = root;
+        closeModal();
+    });
+
+    /* ---------- 组件选择 / 搜索 ---------- */
+    document.querySelectorAll('.tree-file').forEach(item => {
+        item.addEventListener('click', function () {
+            if (analyzing) return;
+            document.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
+            this.classList.add('active');
+            currentFile = this.dataset.file;
+            $('detail-name').textContent = currentFile;
+            $('detail-path').textContent = this.dataset.path;
+            $('pending-badge').textContent = currentFile;
+            // 恢复待分析引导的可交互元素（新会话态曾隐藏）
+            $('pending-badge').style.display = '';
+            document.querySelector('#pending-hero .btn-primary').style.display = '';
+            $('btn-analyze').disabled = false;
+            resetDetail();
+        });
+    });
+    $('file-search').addEventListener('input', function () {
+        const kw = this.value.toLowerCase();
+        document.querySelectorAll('.tree-file').forEach(f => {
+            f.style.display = f.textContent.toLowerCase().includes(kw) ? '' : 'none';
+        });
+    });
+
+    /* ---------- 模拟 Claude Code 分析日志 ---------- */
+    const LOG_LINES = [
+        { t: 'cmd',  s: '$ claude analyze --project D:/Projects/my-app --entry frontend/src/views/OrderList.vue', d: 200 },
+        { t: 'dim',  s: '┌ Claude Code · 静态阅读源码，按业务功能拆分为逻辑链', d: 350 },
+        { t: 'info', s: '▸ 读取 OrderList.vue（213 行），定位事件绑定 handleSearch / handleSubmit / handleEdit / handleDelete', d: 450 },
+        { t: 'hl',   s: '▸ 识别 4 个业务功能：查询(GET) · 新增(POST) · 修改(PUT) · 删除(DELETE)', d: 480 },
+        { t: 'info', s: '▸ 前端链路保持：handleXxx → api/order.js 封装 → HTTP 请求', d: 400 },
+        { t: 'hl',   s: '▸ 后端拆解为逻辑点：不再按 Controller/Service 分层，按「校验→处理→读写」展开', d: 460 },
+        { t: 'info', s: '▸ 查询：校验分页 → 取当前用户 → 查订单 → 组装 VO（5 步）', d: 380 },
+        { t: 'info', s: '▸ 新增：校验参数/库存 → 算价 → 扣库存 → 保存 → 写明细（6 步，2 处失败分支）', d: 420 },
+        { t: 'hl',   s: '▸ 新增识别 @Transactional 事务边界：扣库存 + 保存 + 写明细 同一事务', d: 420 },
+        { t: 'info', s: '▸ 修改：校验归属/状态 → 乐观锁更新（3 步）· 删除：校验 → 逻辑删除 → 释放库存（5 步）', d: 420 },
+        { t: 'ok',   s: '✓ 分析完成：4 个功能 · 19 个逻辑步骤 · 9 个类 · 1 处事务 · 2 处分支', d: 300 },
+    ];
+
+    /* ---------- Agent 终端面板 ---------- */
+    let termPrevW = null;
+    function showIdleTerminal() {
+        $('terminal').innerHTML =
+            '<div class="t-line t-dim">┌ Claude Code · 会话就绪</div>' +
+            '<div class="t-line t-dim">└ 等待任务 · 点击「开始分析」后，此处将实时显示 Claude Code 的终端输出</div>' +
+            '<div class="t-line t-cmd">$ <span class="cursor"></span></div>';
+    }
+    function openTerminal()   {
+        $('agent-terminal').classList.remove('closed');
+        if (!$('terminal').children.length) showIdleTerminal();   // 避免空闲黑屏
+    }
+    function closeTerminal()  { $('agent-terminal').classList.add('closed'); }
+    function toggleTerminal() {
+        if ($('agent-terminal').classList.contains('closed')) openTerminal();
+        else closeTerminal();
+    }
+    let currentTermStatus = 'idle';
+    function setTermStatus(s) {
+        currentTermStatus = s;
+        const a = (typeof activeSession === 'function') ? activeSession() : null;
+        if (a) a.status = s;
+        const map = { idle: '空闲', running: '运行中', done: '已完成' };
+        $('terminal-status-text').textContent = map[s];
+        $('terminal-dot').className = 'status-dot ' + (s === 'idle' ? '' : s);
+        if (typeof renderTermTabs === 'function') renderTermTabs();
+    }
+
+    function runTerminal(cb) {
+        const term = $('terminal');
+        openTerminal();          // 先打开（可能注入就绪内容）
+        term.innerHTML = '';     // 再清空，接收本次输出流
+        setTermStatus('running');
+        $('pending-status').textContent = '▸ Claude Code 正在阅读项目源码，实时输出见下方终端面板…';
+        $('result-wrap').style.display = 'none';
+
+        let i = 0;
+        const clsMap = { cmd: 't-cmd', ok: 't-ok', info: 't-info', dim: 't-dim', hl: 't-hl' };
+        (function next() {
+            if (i >= LOG_LINES.length) {
+                const done = document.createElement('div');
+                done.className = 't-line t-dim';
+                done.innerHTML = '<span class="cursor"></span>';
+                term.appendChild(done);
+                term.scrollTop = term.scrollHeight;
+                setTermStatus('done');
+                setTimeout(cb, 500);
+                return;
+            }
+            const line = LOG_LINES[i++];
+            const div = document.createElement('div');
+            div.className = 't-line ' + clsMap[line.t];
+            div.textContent = line.s;
+            term.appendChild(div);
+            term.scrollTop = term.scrollHeight;
+            setTimeout(next, line.d);
+        })();
+    }
+
+    /* ================================================================
+       图渲染：全部（合并 DAG） / 单功能（7 层水平链）
+    ================================================================ */
+    const NODE_STYLE = {
+        vue:  { bg: '#FFFFFF', border: '#D97757', bw: 2.5, label: '#C15F3C' },
+        api:  { bg: '#C99B7A' },
+        http: { bg: '#83827D' },
+        check:{ bg: '#B08034' },
+        logic:{ bg: '#D97757' },
+        data: { bg: '#5A6E8C' },
+        err:  { bg: '#B54A35', label: '#B54A35' },
+    };
+    const METHOD_COLOR = { get: '#5F7D58', post: '#D97757', put: '#B08034', delete: '#B54A35' };
+
+    function baseNode(name, x, y, size, type, extra = {}) {
+        const st = NODE_STYLE[type] || {};
+        return {
+            name, x, y, symbolSize: size, draggable: true,
+            itemStyle: { color: extra.bg || st.bg, borderColor: st.border || extra.bg || st.bg, borderWidth: st.bw || 0 },
+            label: {
+                show: true, position: extra.pos || 'bottom', distance: 6,
+                color: extra.labelColor || st.label || '#1F1E1D', fontSize: extra.fSize || 11,
+                fontFamily: "'Cascadia Code', Consolas, monospace", fontWeight: 500,
+                formatter: extra.short || name
+            },
+            tip: extra.tip || ''
+        };
+    }
+    function baseLink(s, t, label, opt = {}) {
+        return {
+            source: s, target: t, value: label,
+            lineStyle: { color: opt.color || '#B3B0A6', width: opt.w || 1.8, curveness: opt.c || 0.08, type: opt.type || 'solid' },
+            label: { show: opt.showLabel !== false, fontSize: 10, color: opt.labelColor || '#83827D', formatter: '{c}' }
+        };
+    }
+    function chartOption(nodes, links) {
+        return {
+            backgroundColor: '#FAF9F5',
+            animationDuration: 800,
+            animationEasing: 'cubicOut',
+            tooltip: {
+                trigger: 'item', backgroundColor: '#FFFFFF', borderColor: '#E3E0D6',
+                textStyle: { color: '#1F1E1D', fontSize: 12 },
+                extraCssText: 'box-shadow: 0 2px 8px rgba(60,50,30,0.1); border-radius: 8px;',
+                formatter: p => p.dataType === 'edge'
+                    ? `${p.data.source} → ${p.data.target}<br/><b>${p.data.value || ''}</b>`
+                    : `<b>${p.name}</b>` + (p.data.tip ? `<br/><span style="color:#83827D">${p.data.tip}</span>` : '')
+            },
+            series: [{
+                type: 'graph', layout: 'none', roam: true,
+                edgeSymbol: ['none', 'arrow'], edgeSymbolSize: [0, 7],
+                emphasis: { focus: 'adjacency', lineStyle: { width: 3 } },
+                data: nodes, links
+            }]
+        };
+    }
+
+    /* 全部功能：泳道总览（每功能一行逻辑链） */
+    function buildAllGraph() {
+        const nodes = [], links = [];
+        const laneY = [70, 190, 310, 430];
+        const entryX = 80, httpX = 280, startX = 500, gap = 150;
+        nodes.push(baseNode('OrderList.vue', entryX, 250, 50, 'vue'));
+        FUNCTIONS.forEach((fn, li) => {
+            const y = laneY[li];
+            const httpName = `${fn.method.toUpperCase()} ${fn.url.split('/').pop()}`;
+            const label = `${fn.name}\n${httpName}`;
+            nodes.push(baseNode(httpName, httpX, y, 42, 'http', { bg: METHOD_COLOR[fn.method], short: label, tip: `${fn.url}<br>${paramSummary(fn)}` }));
+            links.push(baseLink('OrderList.vue', httpName, fn.method.toUpperCase(), { c: 0.05, showLabel: false }));
+            let prev = httpName;
+            fn.logic.forEach((step, i) => {
+                const name = `${fn.id}:${step.n}`;
+                nodes.push(baseNode(name, startX + i * gap, y, 38, step.t, { short: step.n, tip: step.where }));
+                links.push(baseLink(prev, name, '', { showLabel: false }));
+                prev = name;
+            });
+        });
+        return { nodes, links };
+    }
+
+    /* 单功能：前端三段 + 后端逻辑点 水平链 */
+    function buildFnGraph(fn) {
+        const nodes = [], links = [];
+        const main = seq(fn);
+        const N = main.length;
+        const startX = 80, gap = Math.min(150, 1150 / Math.max(1, N - 1));
+        const yMid = 170;
+
+        main.forEach((step, i) => {
+            let bg;
+            if (step.t === 'http') bg = METHOD_COLOR[fn.method];
+            const name = `${i}. ${step.n}`;
+            // 标签上下交错，避免相邻节点文字重叠
+            const pos = i % 2 === 0 ? 'bottom' : 'top';
+            nodes.push(baseNode(name, startX + i * gap, yMid, step.t === 'vue' ? 48 : 40, step.t, {
+                bg, tip: stepLoc(step), short: step.n, pos, fSize: 10.5
+            }));
+            if (i > 0) {
+                const edgeLabel = i === 1 ? '调用' : (i === 2 ? fn.method.toUpperCase() : '');
+                links.push(baseLink(`${i - 1}. ${main[i - 1].n}`, name, edgeLabel, { c: 0.05, showLabel: !!edgeLabel }));
+            }
+        });
+
+        // 异常分支：校验类逻辑点失败即中断
+        fn.logic.forEach((step, i) => {
+            if (!step.branch) return;
+            const srcName = `${fn.front.length + i}. ${step.n}`;
+            const errName = `✗ ${step.n}失败`;
+            if (!nodes.find(n => n.name === errName)) {
+                nodes.push(baseNode(errName, startX + (fn.front.length + i) * gap, yMid + 150, 30, 'err',
+                    { short: '✗ 中断 →\n异常返回' }));
+            }
+            links.push(baseLink(srcName, errName, '✗ 失败', { c: 0.12, color: '#C96A54', type: 'dashed', labelColor: '#B54A35' }));
+        });
+        return { nodes, links };
+    }
+
+    function renderEchartsGraph() {
+        const area = $('graph-area');
+        // 容器即将重建：必须先销毁旧实例，否则旧实例画在游离 DOM 上导致空白
+        if (myChart) { try { myChart.dispose(); } catch (e) {} myChart = null; }
+        const h = currentFn === 'all' ? 500 : 320;
+        area.innerHTML = `<div id="chain-graph" class="graph-container" style="height:${h}px"></div>`;
+        myChart = echarts.init($('chain-graph'));
+        const g = currentFn === 'all' ? buildAllGraph() : buildFnGraph(FUNCTIONS.find(f => f.id === currentFn));
+        // 应用已保存的自定义布局
+        const saved = loadSavedLayout();
+        if (saved) g.nodes.forEach(n => { const p = saved[n.name]; if (p) { n.x = p.x; n.y = p.y; } });
+        layoutState.dirty = false;
+        layoutState.hasSaved = !!saved;
+        updateLayoutButtons();
+        myChart.setOption(chartOption(g.nodes, g.links), true);
+        myChart.resize();
+        attachNodeDrag(myChart);
+    }
+
+    /* ---------- 布局持久化（保存 / 重置） ---------- */
+    const memLayoutStore = {};   // localStorage 不可用时的内存兜底
+    const layoutState = { dirty: false, hasSaved: false };
+    function layoutKey() { return `scv-layout:${currentFile}:${currentFn}`; }
+    function loadSavedLayout() {
+        try { const v = localStorage.getItem(layoutKey()); if (v) return JSON.parse(v); } catch (e) {}
+        return memLayoutStore[layoutKey()] || null;
+    }
+    function persistLayout(map) {
+        try { localStorage.setItem(layoutKey(), JSON.stringify(map)); } catch (e) { memLayoutStore[layoutKey()] = map; }
+    }
+    function clearSavedLayout() {
+        try { localStorage.removeItem(layoutKey()); } catch (e) {}
+        delete memLayoutStore[layoutKey()];
+    }
+    function updateLayoutButtons() {
+        $('btn-layout-save').disabled = !layoutState.dirty;
+        $('btn-layout-reset').disabled = !(layoutState.dirty || layoutState.hasSaved);
+    }
+    function showToast(msg) {
+        const t = $('graph-toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(() => t.classList.remove('show'), 1800);
+    }
+
+    /* ---------- 节点拖拽（layout:'none' 下 ECharts 原生 draggable 不生效，自实现） ---------- */
+    let dragInfo = null;   // { di, sx, sy, ox, oy }
+    function hitNode(chart, dom, clientX, clientY) {
+        const r = dom.getBoundingClientRect();
+        const x = clientX - r.left, y = clientY - r.top;
+        const data = chart.getOption().series[0].data;
+        let best = null, bd = Infinity;
+        data.forEach((n, i) => {
+            if (n.x == null) return;
+            const p = chart.convertToPixel({ seriesIndex: 0 }, [n.x, n.y]);
+            if (!p) return;
+            const rad = (n.symbolSize || 40) / 2 + 4;
+            const d = (p[0] - x) ** 2 + (p[1] - y) ** 2;
+            if (d < rad * rad && d < bd) { bd = d; best = i; }
+        });
+        return best;
+    }
+    function onDragDown(ev) {
+        if (!myChart || dragInfo) return;
+        const dom = myChart.getDom();
+        const di = hitNode(myChart, dom, ev.clientX, ev.clientY);
+        if (di == null) return;                 // 未命中节点 → 交给画布平移(roam)
+        ev.stopPropagation();                   // 命中节点 → 拦截 mouse+pointer，阻止触发平移
+        const n = myChart.getOption().series[0].data[di];
+        const r = dom.getBoundingClientRect();
+        dragInfo = { di, sx: ev.clientX - r.left, sy: ev.clientY - r.top, ox: n.x, oy: n.y };
+        dom.style.cursor = 'grabbing';
+    }
+    function onDragMove(ev) {
+        if (!dragInfo || !myChart) return;
+        const dom = myChart.getDom();
+        const r = dom.getBoundingClientRect();
+        const p0 = myChart.convertFromPixel({ seriesIndex: 0 }, [dragInfo.sx, dragInfo.sy]);
+        const p1 = myChart.convertFromPixel({ seriesIndex: 0 }, [ev.clientX - r.left, ev.clientY - r.top]);
+        if (!p0 || !p1) return;
+        const data = myChart.getOption().series[0].data.map((n, i) =>
+            i === dragInfo.di ? { ...n, x: dragInfo.ox + p1[0] - p0[0], y: dragInfo.oy + p1[1] - p0[1] } : n);
+        myChart.setOption({ series: [{ data }] });
+    }
+    function onDragUp() {
+        if (dragInfo) {
+            if (myChart) myChart.getDom().style.cursor = '';
+            layoutState.dirty = true;      // 有拖拽 → 可保存
+            updateLayoutButtons();
+        }
+        dragInfo = null;
+    }
+    function attachNodeDrag(chart) {
+        const dom = chart.getDom();
+        // zr 平移监听 pointer 事件，必须连同 mouse 事件一起在捕获阶段拦截
+        ['mousedown', 'pointerdown'].forEach(t =>
+            dom.addEventListener(t, onDragDown, true));
+    }
+    ['mousemove', 'pointermove'].forEach(t => window.addEventListener(t, onDragMove));
+    ['mouseup', 'pointerup'].forEach(t => window.addEventListener(t, onDragUp));
+
+    /* 纯 CSS 降级图 */
+    function renderCssGraph() {
+        const fn = currentFn === 'all' ? null : FUNCTIONS.find(f => f.id === currentFn);
+        const steps = fn ? seq(fn) : [
+            { t: 'vue', n: 'OrderList.vue' },
+            { t: 'logic', n: '校验 → 业务处理 → 数据读写（按功能展开）' },
+        ];
+        let html = '<div style="display:flex;align-items:center;gap:3px;padding:40px 24px 20px;overflow-x:auto">';
+        steps.forEach((s2, i) => {
+            const cls = s2.t === 'http' ? `http ${fn ? fn.method : 'get'}` : s2.t;
+            html += `<span class="bar-node ${cls}" title="${BAR_TITLE[s2.t] || ''}" style="width:auto;padding:0 12px;border-radius:16px">${s2.n}</span>`;
+            if (i < steps.length - 1) html += '<span class="bar-link"></span>';
+        });
+        html += '</div><div class="bar-caption" style="padding:0 24px 12px;color:var(--text-secondary);font-size:11px">⚠ 图表库加载失败，已切换简版链路 · 将 echarts.min.js 放到本文件同目录后刷新可恢复交互图</div>';
+        $('graph-area').innerHTML = html;
+    }
+
+    function renderGraph() {
+        ensureEcharts(ok => {
+            if (ok && window.echarts) {
+                try { renderEchartsGraph(); return; } catch (e) { console.error('ECharts 渲染失败，降级', e); }
+            }
+            renderCssGraph();
+        });
+    }
+
+    /* ================================================================
+       功能页签 + 链路卡片
+    ================================================================ */
+    function renderTabs() {
+        const tabs = [`<button class="fn-tab active" data-fn="all">全部 <span class="cnt">${FUNCTIONS.length}</span></button>`];
+        FUNCTIONS.forEach(f => {
+            tabs.push(`<button class="fn-tab" data-fn="${f.id}">
+                <span class="m ${f.method}">${f.method.toUpperCase()}</span>${f.name}</button>`);
+        });
+        $('fn-tabs').innerHTML = tabs.join('');
+        $('fn-tabs').querySelectorAll('.fn-tab').forEach(t => {
+            t.addEventListener('click', () => selectFn(t.dataset.fn));
+        });
+    }
+
+    function barHtml(fn) {
+        const all = seq(fn);
+        let html = '<div class="bar">';
+        all.forEach((s2, i) => {
+            const cls = s2.t === 'http' ? `http ${fn.method}` : s2.t;
+            const label = BAR_LETTER[s2.t] || String(i - fn.front.length + 1);
+            html += `<span class="bar-node ${cls}" title="${BAR_TITLE[s2.t] || '逻辑点'}：${s2.n}">${label}</span>`;
+            if (i < all.length - 1) html += '<span class="bar-link"></span>';
+        });
+        html += '</div>';
+        html += `<div class="bar-caption">${all.map(s2 => s2.n.split('(')[0]).join(' → ')}</div>`;
+        return html;
+    }
+
+    function paramsHtml(fn) {
+        const p = fn.params || {};
+        const kinds = [['path', 'Path'], ['query', 'Query'], ['body', 'Body · JSON']];
+        let html = '';
+        kinds.forEach(([k, label]) => {
+            const list = p[k] || [];
+            if (!list.length) return;
+            html += `<div class="params-title"><span class="params-kind ${k}">${label}</span></div>`;
+            html += list.map(it => `
+                <div class="param-row">
+                    <code class="param-name">${it.name}</code>
+                    <span class="param-type">${it.type}</span>
+                    <span class="param-req ${it.req ? 'must' : 'opt'}">${it.req ? '必填' : '可选'}</span>
+                    <span class="param-desc">${it.desc}</span>
+                </div>`).join('');
+        });
+        if (!html) return '';
+        return `<div class="params-box">
+            <div class="params-title">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6.5 3.5L3 8l3.5 4.5M9.5 3.5L13 8l-3.5 4.5"/></svg>
+                请求参数
+            </div>${html}</div>`;
+    }
+    function paramSummary(fn) {
+        const p = fn.params || {}; const parts = [];
+        if (p.path)  parts.push('Path: '  + p.path.map(i => i.name).join(', '));
+        if (p.query) parts.push('Query: ' + p.query.map(i => i.name).join(', '));
+        if (p.body)  parts.push('Body: '  + p.body.map(i => i.name).join(', '));
+        return parts.join(' · ');
+    }
+
+    function cardHtml(fn) {
+        const steps = seq(fn).map((s2, i) => {
+            const txBadge = s2.tx === 'begin' ? '<span class="tx-badge">@Transactional 开启</span>'
+                          : s2.tx === 'in' ? '<span class="tx-badge">事务内</span>' : '';
+            return `
+            <div class="step-row ${s2.branch ? 'branched' : ''}">
+                <span class="step-idx">${i + 1}</span>
+                <div class="step-body">
+                    <span class="step-name">${s2.n}${txBadge}</span>
+                    <span class="step-loc">${stepLoc(s2)}</span>
+                </div>
+            </div>`;
+        }).join('');
+        return `
+        <div class="chain-item" data-fn="${fn.id}">
+            <div class="chain-header" data-act="select">
+                <span class="method ${fn.method}">${fn.method.toUpperCase()}</span>
+                <span class="fn-name">${fn.name}</span>
+                <span class="path">${fn.url}</span>
+                <span class="tag ${fn.tag[0]}">${fn.tag[1]}</span>
+            </div>
+            <div class="chain-desc">${fn.desc}</div>
+            ${paramsHtml(fn)}
+            ${barHtml(fn)}
+            <div class="chain-detail">
+                <div class="detail-steps">${steps}${fn.branchHtml || ''}</div>
+            </div>
+            <div class="chain-footer">
+                <button class="btn-text" data-act="toggle">展开详情 ▾</button>
+                <button class="btn-text" data-act="code">查看源码</button>
+                <button class="btn-text" data-act="copy">复制链路</button>
+                <span class="toggle-hint">点击头部可在图中聚焦此功能</span>
+            </div>
+        </div>`;
+    }
+
+    function renderCards(filterId) {
+        const list = $('chain-list');
+        const fns = filterId && filterId !== 'all' ? FUNCTIONS.filter(f => f.id === filterId) : FUNCTIONS;
+        list.innerHTML = fns.map(cardHtml).join('');
+        document.querySelectorAll('#chain-list .chain-item').forEach((el, i) => {
+            setTimeout(() => el.classList.add('show'), i * 200);
+        });
+        // 卡片交互
+        document.querySelectorAll('#chain-list .chain-item').forEach(el => {
+            el.querySelector('.chain-header').addEventListener('click', () => selectFn(el.dataset.fn));
+            el.querySelector('[data-act="toggle"]').addEventListener('click', function () {
+                const expanded = el.classList.toggle('expanded');
+                this.textContent = expanded ? '收起详情 ▴' : '展开详情 ▾';
+            });
+        });
+    }
+
+    const statTimers = {};
+    function countUp(el, target) {
+        const key = el.id;
+        if (statTimers[key]) clearInterval(statTimers[key]);
+        let cur = parseInt(el.textContent, 10) || 0;
+        const step = Math.max(1, Math.round(Math.max(target, cur) / 18));
+        statTimers[key] = setInterval(() => {
+            if (cur < target) cur = Math.min(target, cur + step);
+            else if (cur > target) cur = Math.max(target, cur - step);
+            el.textContent = cur;
+            if (cur === target) { clearInterval(statTimers[key]); statTimers[key] = null; }
+        }, 50);
+    }
+    function clearStatTimers() {
+        Object.keys(statTimers).forEach(k => { clearInterval(statTimers[k]); statTimers[k] = null; });
+    }
+
+    function updateStats() {
+        if (currentFn === 'all') {
+            countUp($('stat-fn'), TOTALS.fn);
+            countUp($('stat-svc'), TOTALS.svc);
+            countUp($('stat-cls'), TOTALS.cls);
+        } else {
+            const fn = FUNCTIONS.find(f => f.id === currentFn);
+            countUp($('stat-fn'), 1);
+            countUp($('stat-svc'), fn.logic.length);
+            countUp($('stat-cls'), fn.cls);
+        }
+    }
+
+    function selectFn(id) {
+        currentFn = id;
+        document.querySelectorAll('.fn-tab').forEach(t => t.classList.toggle('active', t.dataset.fn === id));
+        const fn = id === 'all' ? null : FUNCTIONS.find(f => f.id === id);
+        $('graph-sub').textContent = fn ? `${fn.name} · ${fn.method.toUpperCase()} ${fn.url}` : '全部功能';
+        renderCards(id);
+        updateStats();
+        renderGraph();
+    }
+
+    /* ---------- 状态重置 / 主流程 ---------- */
+    function resetDetail() {
+        $('pending-hero').style.display = 'flex';
+        $('pending-status').textContent = '';
+        closeTerminal();
+        showIdleTerminal();
+        setTermStatus('idle');
+        $('result-wrap').style.display = 'none';
+        $('graph-area').innerHTML = '';
+        if (myChart) { try { myChart.dispose(); } catch (e) {} myChart = null; }
+        clearStatTimers();
+        layoutState.dirty = false;
+        layoutState.hasSaved = false;
+        updateLayoutButtons();
+        ['stat-fn', 'stat-svc', 'stat-cls'].forEach(id => $(id).textContent = '0');
+        currentFn = 'all';
+        $('btn-analyze-text').textContent = '开始分析';
+    }
+
+    function startAnalysis() {
+        if (analyzing) return;
+        analyzing = true;
+        const btn = $('btn-analyze');
+        btn.disabled = true;
+        $('btn-analyze-text').textContent = '分析中…';
+
+        runTerminal(() => {
+            try {
+                // 终端面板保持打开（VSCode 行为），主区切换为结果
+                $('pending-hero').style.display = 'none';
+                $('pending-status').textContent = '';
+                $('result-wrap').style.display = 'flex';
+                currentFn = 'all';
+                renderTabs();
+                selectFn('all');
+                const h = $('history-list');
+                h.innerHTML = `<div class="history-item" data-file="${currentFile}">${currentFile} · ${FUNCTIONS.length} 个功能 · 刚刚</div>` + h.innerHTML;
+                saveActiveSession();   // 会话完成：快照（tab 更名、内容固化）
+                renderTermTabs();
+            } catch (e) {
+                console.error('结果渲染异常', e);
+            } finally {
+                btn.disabled = false;
+                $('btn-analyze-text').textContent = '重新分析';
+                analyzing = false;
+            }
+        });
+    }
+
+    /* ---------- 事件 ---------- */
+    $('btn-analyze').addEventListener('click', startAnalysis);
+
+    /* ---------- 会话管理（终端多标签） ---------- */
+    let sessions = [];
+    let sessionSeq = 0;
+    let activeSessionId = null;
+
+    function newSessionObj() {
+        sessionSeq += 1;
+        return { id: sessionSeq, name: `会话 ${sessionSeq}`, file: null, analyzed: false, status: 'idle', termHtml: '' };
+    }
+    function activeSession() { return sessions.find(s => s.id === activeSessionId); }
+    function saveActiveSession() {
+        const s = activeSession(); if (!s) return;
+        s.termHtml = $('terminal').innerHTML;
+        s.status = currentTermStatus;
+        s.file = currentFile;
+        s.analyzed = $('result-wrap').style.display === 'flex';
+        if (s.analyzed && s.file) s.name = s.file;
+    }
+    function renderTermTabs() {
+        $('terminal-tabs').innerHTML = sessions.map(s => `
+            <span class="terminal-tab ${s.id === activeSessionId ? 'active' : ''}" data-sid="${s.id}" title="${s.file || s.name}">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 4.5L6.5 8 3 11.5M8 12h5"/></svg>
+                ${s.name}
+                ${s.status === 'running' ? '<span class="tab-run"></span>' : ''}
+            </span>`).join('');
+    }
+    function selectTreeFile(file) {
+        const tree = [...document.querySelectorAll('.tree-file')].find(t => t.dataset.file === file);
+        if (!tree) return;
+        document.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
+        tree.classList.add('active');
+        currentFile = file;
+        $('detail-name').textContent = file;
+        $('detail-path').textContent = tree.dataset.path;
+        $('pending-badge').textContent = file;
+        $('pending-badge').style.display = '';
+        document.querySelector('#pending-hero .btn-primary').style.display = '';
+        $('btn-analyze').disabled = false;
+    }
+    function blankSessionUI() {
+        currentFile = null;
+        document.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
+        $('detail-name').textContent = '新会话';
+        $('detail-path').textContent = '从左侧选择一个 Vue 组件开始分析';
+        resetDetail();
+        $('pending-badge').style.display = 'none';
+        document.querySelector('#pending-hero .btn-primary').style.display = 'none';
+        $('btn-analyze').disabled = true;
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    }
+    function switchSession(id) {
+        if (analyzing || id === activeSessionId) return;
+        saveActiveSession();
+        activeSessionId = id;
+        const s = activeSession();
+        const st = s.status;   // 快照：resetDetail 会把 status 改写为 idle
+        // 先恢复主区（resetDetail 会重置终端，须在其之后恢复终端内容）
+        if (s.analyzed && s.file === 'OrderList.vue') {
+            selectTreeFile(s.file);
+            resetDetail();
+            $('pending-hero').style.display = 'none';
+            $('pending-status').textContent = '';
+            $('result-wrap').style.display = 'flex';
+            renderTabs();
+            selectFn('all');
+        } else if (s.file) {
+            selectTreeFile(s.file);
+            resetDetail();
+        } else {
+            blankSessionUI();
+        }
+        // 再恢复终端
+        $('terminal').innerHTML = s.termHtml || '';
+        if (!$('terminal').children.length) showIdleTerminal();
+        setTermStatus(st);
+        openTerminal();
+        renderTermTabs();
+    }
+    function startNewSession() {
+        if (analyzing) return;
+        saveActiveSession();
+        const s = newSessionObj();
+        sessions.push(s);
+        activeSessionId = s.id;
+        blankSessionUI();
+        showIdleTerminal();
+        setTermStatus('idle');
+        openTerminal();
+        renderTermTabs();
+    }
+    $('btn-new-session').addEventListener('click', startNewSession);
+
+    // 终端标签点击切换
+    $('terminal-tabs').addEventListener('click', e => {
+        const tab = e.target.closest('.terminal-tab');
+        if (tab) switchSession(Number(tab.dataset.sid));
+    });
+
+    // 侧栏历史：切换到对应会话（无则新建缓存会话）
+    $('history-list').addEventListener('click', e => {
+        const item = e.target.closest('.history-item');
+        if (!item || analyzing) return;
+        const file = item.dataset.file;
+        const target = [...sessions].reverse().find(s => s.file === file && s.analyzed);
+        if (target) return switchSession(target.id);
+        if (file === 'OrderList.vue') {
+            saveActiveSession();
+            const s = newSessionObj();
+            s.file = file; s.analyzed = true; s.name = file;
+            s.termHtml = '<div class="t-line t-dim">↩ 已载入历史会话 · OrderList.vue · 结果来自缓存</div>';
+            sessions.push(s);
+            switchSession(s.id);
+            setTermStatus('done');
+        }
+    });
+    $('btn-layout-save').addEventListener('click', () => {
+        if (!myChart) return;
+        const map = {};
+        myChart.getOption().series[0].data.forEach(n => { if (n.x != null) map[n.name] = { x: n.x, y: n.y }; });
+        persistLayout(map);
+        layoutState.dirty = false;
+        layoutState.hasSaved = true;
+        updateLayoutButtons();
+        showToast('布局已保存 · 切换页签或重新分析后仍生效');
+    });
+    $('btn-layout-reset').addEventListener('click', () => {
+        clearSavedLayout();
+        layoutState.dirty = false;
+        layoutState.hasSaved = false;
+        updateLayoutButtons();
+        renderGraph();
+        showToast('已恢复默认布局');
+    });
+    $('btn-reset').addEventListener('click', () => { if (!analyzing) resetDetail(); });
+    $('btn-log').addEventListener('click', toggleTerminal);
+    $('btn-terminal').addEventListener('click', toggleTerminal);
+    $('terminal-close').addEventListener('click', closeTerminal);
+    $('terminal-new').addEventListener('click', startNewSession);
+    $('terminal-max').addEventListener('click', () => {
+        const p = $('agent-terminal');
+        if (p.style.width === '55vw') {
+            p.style.width = termPrevW || '420px';
+        } else {
+            termPrevW = p.style.width || '420px';
+            p.style.width = '55vw';
+        }
+    });
+    $('terminal-resize').addEventListener('mousedown', ev => {
+        ev.preventDefault();
+        const startX = ev.clientX, startW = $('agent-terminal').offsetWidth;
+        const mv = e => {
+            const w = Math.min(window.innerWidth * 0.7, Math.max(260, startW - (e.clientX - startX)));
+            $('agent-terminal').style.width = w + 'px';
+        };
+        const up = () => {
+            window.removeEventListener('mousemove', mv);
+            window.removeEventListener('mouseup', up);
+        };
+        window.addEventListener('mousemove', mv);
+        window.addEventListener('mouseup', up);
+    });
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', function () {
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            this.classList.add('active');
+        });
+    });
+    window.addEventListener('resize', () => { if (myChart) myChart.resize(); });
+
+    /* ---------- 初始会话 ---------- */
+    sessions.push(newSessionObj());
+    activeSessionId = sessions[0].id;
+    renderTermTabs();
+
+    /* ---------- 自动化验证钩子 ---------- */
+    if (location.hash.startsWith('#auto-analyze')) {
+        const target = location.hash.split('=')[1] || 'all';
+        setTimeout(() => startAnalysis(() => {}), 300);
+        setTimeout(() => { if (typeof selectFn === 'function') selectFn(target); }, 7500);
+    }
+    if (location.hash === '#auto-modal')  setTimeout(openModal, 300);
+    </script>
+</body>
+</html>
