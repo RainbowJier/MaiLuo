@@ -17,14 +17,7 @@
       </div>
     </div>
 
-    <nav class="nav">
-      <div class="nav-item active">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
-          <circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/>
-        </svg>
-        <span>链路分析</span>
-      </div>
-    </nav>
+    <nav class="nav"></nav>
 
     <div class="sidebar-footer">
       <div class="user-info">
