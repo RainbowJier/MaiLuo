@@ -5,7 +5,6 @@
         <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/>
       </svg>
       <span class="logo-name serif">MaiLuo</span>
-      <span class="logo-cn">脉络</span>
     </div>
 
     <div class="project-card" title="点击配置项目" @click="S.configOpen = true">
@@ -18,27 +17,12 @@
       </div>
     </div>
 
-    <button class="new-session-btn" @click="startNewSession">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-        <path d="M8 3v10M3 8h10"/>
-      </svg>
-      新会话
-    </button>
-
     <nav class="nav">
       <div class="nav-item active">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6">
           <circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/>
         </svg>
         <span>链路分析</span>
-      </div>
-
-      <div class="nav-section-title">最近会话</div>
-      <div v-for="s in S.sessions.slice().reverse()" :key="s.id"
-           class="history-item" :class="{ active: s.id === S.activeId }"
-           :title="s.file || s.name"
-           @click="switchSession(s.id)">
-        {{ s.name }}<template v-if="s.analyzed"> · {{ s.data.functions.length }} 个功能</template>
       </div>
     </nav>
 
@@ -58,7 +42,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { S, startNewSession, switchSession } from '../store.js';
+import { S } from '../store.js';
 
 const projectName = computed(() =>
   S.config.root ? S.config.root.split(/[\\/]/).filter(Boolean).pop() : '未配置');
