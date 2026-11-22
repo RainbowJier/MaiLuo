@@ -19,7 +19,7 @@ import { S, activeSession, setTerminalState } from '../store.js';
 const hostEl = ref(null);
 const alive = ref(false);
 const error = ref('');
-let term = null, fit = null, unsubscribe = null, observer = null, starting = false;
+let term = null, fit = null, unsubscribe = null, observer = null, fitTimer = null, starting = false;
 
 const session = () => activeSession();
 
@@ -99,6 +99,13 @@ onMounted(() => {
   observer.observe(hostEl.value);
   // 字体加载会改变字宽度量，容器尺寸不变时 ResizeObserver 不会触发，需显式重排
   document.fonts?.ready?.then(refit);
+  // IME 组合等场景容器尺寸会经历异常变化且结束后不再触发任何事件，
+  // 画布可能停在旧列数；每 2s 校对一次期望行列数，不一致就重排
+  fitTimer = setInterval(() => {
+    if (!term || !alive.value) return;
+    const dims = fit.proposeDimensions();
+    if (dims && (dims.cols !== term.cols || dims.rows !== term.rows)) refit();
+  }, 2000);
   setTerminalState({ alive: false, error: '' });
   void start();
 });
@@ -112,6 +119,7 @@ watch(alive, v => { if (v) refit(); });
 onBeforeUnmount(() => {
   unsubscribe?.();
   observer?.disconnect();
+  clearInterval(fitTimer);
   try { term?.dispose(); } catch { /* already gone */ }
   term = null;
 });
