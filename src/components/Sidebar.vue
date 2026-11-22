@@ -70,6 +70,8 @@
                @click="selectFile(row.rel)">
             <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 1.5A.5.5 0 0 1 3.5 1h4l1.5 1.5H13a.5.5 0 0 1 .5.5v11a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5v-12z"/></svg>
             <span>{{ fileName(row.rel) }}</span>
+            <i v-if="sessionByRel[row.rel]" class="session-dot" :class="{ done: sessionByRel[row.rel].analyzed }"
+               :title="sessionByRel[row.rel].analyzed ? '该菜单已有分析结果' : '该菜单已建立独立会话'"></i>
             <button class="g-btn g-unlink" title="移出分组" @click.stop="unlink(row.g, row.rel)">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
             </button>
@@ -131,7 +133,7 @@
 <script setup>
 import { ref, reactive, computed } from 'vue';
 import {
-  S, selectFile, fileName, showToast,
+  S, selectFile, fileName, sessionForComponent, showToast,
   addGroup, renameGroup, deleteGroup,
   addFileToGroup, removeFileFromGroup, setGroupFiles, groupsForRoot
 } from '../store.js';
@@ -140,6 +142,14 @@ const projectName = computed(() =>
   S.config.root ? S.config.root.split(/[\\/]/).filter(Boolean).pop() : '未配置');
 const rootGroups = computed(() => groupsForRoot());
 const fileByRel = computed(() => Object.fromEntries(S.files.map(f => [f.rel, f])));
+const sessionByRel = computed(() => {
+  const map = {};
+  for (const f of S.files) {
+    const s = sessionForComponent(f.rel);
+    if (s) map[f.rel] = s;
+  }
+  return map;
+});
 
 const collapsed = reactive(new Set());
 const dropId = ref(null);

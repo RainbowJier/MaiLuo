@@ -1,6 +1,7 @@
 import { reactive, computed } from 'vue';
 import { seq } from './chain.js';
-import { CW, analyzeClaudeSession, claudeForAnalysis, ensureClaudeForAnalysis, initClaudeWorkspace, isClaudeBusy, stopClaudeSession } from './claude-store.js';
+import { CW, analyzeClaudeSession, claudeForAnalysis, claudeRootKey, ensureClaudeForAnalysis, initClaudeWorkspace, isClaudeBusy, stopClaudeSession } from './claude-store.js';
+import { canonicalizeSessions, componentRel, componentSessionKey } from './session-key.js';
 
 const api = window.api;
 
@@ -97,8 +98,25 @@ export async function initApp() {
   }
   wireEvents();
   await refreshFiles();
+  const workspaceReady = await initClaudeWorkspace();
+  // 一组件一会话：清掉旧版无组件归属的全局会话，合并同一组件的重复会话。
+  const canonical = canonicalizeSessions(S.sessions, {
+    frontend: S.config.frontend, root: S.config.root, activeId: S.activeId,
+    chatWeight: raw => {
+      const chat = (raw.claudeId && CW.sessions.find(c => c.id === raw.claudeId)) ||
+        (raw.claudeKey && CW.sessions.find(c => c.analysisKey === raw.claudeKey &&
+          claudeRootKey(c.root) === claudeRootKey(raw.projectRoot || S.config.root)));
+      return chat ? (chat.messages || []).length : 0;
+    }
+  });
+  S.sessions = canonical.sessions;
+  S.activeId = canonical.activeId;
+  S.sessionSeq = Math.max(0, ...S.sessions.map(s => s.id));
+  if (!S.sessions.some(s => s.id === S.activeId)) S.activeId = S.sessions[0]?.id ?? null;
+  const active = activeSession();
+  S.selectedFile = active?.file ? toFrontendRel(active.file) : null;
   if (S.selectedFile && !S.files.find(f => f.rel === S.selectedFile)) S.selectedFile = null;
-  if (await initClaudeWorkspace()) {
+  if (workspaceReady) {
     for (const s of S.sessions) {
       if (!s.projectRoot || !s.claudeKey) continue;
       const bound = await ensureClaudeForAnalysis(s);
@@ -110,11 +128,11 @@ export async function initApp() {
       } else s.claudeError = CW.bindingErrors[s.claudeKey] || '';
     }
   }
+  if (S.sessions.length) persistSessions();
   S.ready = true;
 }
 function toFrontendRel(rootRel) {
-  const fe = S.config.frontend ? S.config.frontend.replace(/\/$/, '') + '/' : '';
-  return rootRel.startsWith(fe) ? rootRel.slice(fe.length) : rootRel;
+  return componentRel(rootRel, S.config.frontend);
 }
 
 function wireEvents() {
@@ -146,8 +164,8 @@ function wireEvents() {
       s.claudePermissions = Object.values(CW.permissionsBySession[s.claudeId] || {});
       if (chat.analysis?.status === 'running') s.status = 'running';
       else if (chat.status === 'running' || chat.status === 'starting' || chat.status === 'permission') s.status = 'idle';
-      else if (chat.analysis?.status === 'done') S.analyzing = false;
-      S.analyzing = !!(activeSession()?.claudeStatus === 'running' && activeSession()?.status === 'running');
+      // 分析状态按会话隔离：其他组件在跑不影响当前会话的按钮和提示。
+      if (s.id === S.activeId) S.analyzing = s.status === 'running';
       persistSessions();
     } else if (event.kind === 'permission') {
       s.claudePermissions = Object.values(CW.permissionsBySession[s.claudeId] || {});
@@ -161,7 +179,7 @@ function wireEvents() {
   });
   api.onAnalysisResult(({ sessionId, ok, data, error }) => {
     const s = S.sessions.find(x => x.id === sessionId);
-    S.analyzing = false;
+    if (s && s.id === S.activeId) S.analyzing = false;
     if (!s) return;
     if (ok && data) {
       s.data = data; s.analyzed = true; s.status = 'done';
@@ -218,29 +236,39 @@ export async function saveConfigFlow(cfg) {
 }
 
 /* ---------------- 组件选择：一个组件一个会话 ---------------- */
+export function sessionForComponent(rel, projectRoot = S.config.root) {
+  const target = componentSessionKey(rel);
+  return S.sessions.find(s => (s.projectRoot || S.config.root) === projectRoot &&
+    (s.file ? componentSessionKey(toFrontendRel(s.file)) === target : s.claudeKey === target)) || null;
+}
 export function selectFile(rel) {
-  if (S.analyzing) return;
-  const display = displayPath(rel);
-  let s = S.sessions.find(x => x.file === display && (x.projectRoot || S.config.root) === S.config.root);
+  let s = sessionForComponent(rel);
   if (!s) s = createComponentSession(rel);
   S.selectedFile = rel;
   S.terminalOpen = true;
-  if (S.activeId !== s.id) { S.activeId = s.id; S.currentFn = 'all'; persistSessions(); }
+  if (S.activeId !== s.id) {
+    S.activeId = s.id;
+    S.currentFn = 'all';
+    S.analyzing = s.status === 'running';
+    persistSessions();
+  }
 }
 
 /* ---------------- 分析 ---------------- */
 export async function startAnalysis() {
-  const s = activeSession();
-  if (!s || S.analyzing) return;
+  const current = activeSession();
+  if (!current) return;
   if (!S.config.root) { S.configOpen = true; return; }
-  const selected = S.selectedFile || (s.file ? toFrontendRel(s.file) : null);
+  const selected = S.selectedFile || (current.file ? toFrontendRel(current.file) : null);
   if (!selected) { showToast('请先从左侧选择一个 Vue 组件'); return; }
   // 一组件一会话：当前会话与所选组件不符时，切到（或新建）该组件的会话
-  if (!s.file || s.file !== displayPath(selected)) {
+  let s = current;
+  if (!s.file || componentSessionKey(toFrontendRel(s.file)) !== componentSessionKey(selected)) {
     selectFile(selected);
     s = activeSession();
     if (!s) return;
   }
+  if (s.status === 'running') { showToast('当前组件正在分析，可先切到其他菜单'); return; }
   if (s.projectRoot && s.projectRoot !== S.config.root) {
     showToast('当前会话属于另一个项目，请切换回原项目');
     return;
@@ -262,17 +290,10 @@ export async function startAnalysis() {
 }
 export function cancelAnalysis() {
   const s = activeSession();
-  if (s?.claudeId && S.analyzing) void stopClaudeSession(s.claudeId);
+  if (s?.claudeId && s.status === 'running') void stopClaudeSession(s.claudeId);
 }
 
 /* ---------------- 会话：按组件创建，一组件一会话 ---------------- */
-function componentSessionKey(rel) {
-  const r = String(rel).replace(/\\/g, '/');
-  if (`vue:${r}`.length <= 100) return `vue:${r}`;
-  let h = 0;
-  for (let i = 0; i < r.length; i++) h = (h * 31 + r.charCodeAt(i)) >>> 0;
-  return `vue:h${h.toString(36)}`;
-}
 function createComponentSession(rel) {
   S.sessionSeq += 1;
   const s = { id: S.sessionSeq, name: fileName(rel), file: displayPath(rel), projectRoot: S.config.root,
@@ -292,7 +313,7 @@ export function switchSession(id) {
   if (!s) return;
   S.activeId = id;
   S.currentFn = 'all';
-  S.analyzing = s.claudeStatus === 'running' && !s.analyzed;
+  S.analyzing = s.status === 'running';
   S.config.backend = s.backend || S.config.backend;
   S.selectedFile = s.analyzed || s.file ? toFrontendRel(s.file || '') : null;
   if (S.selectedFile && !S.files.find(f => f.rel === S.selectedFile)) S.selectedFile = null;
