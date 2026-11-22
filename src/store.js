@@ -1,6 +1,5 @@
 import { reactive, computed } from 'vue';
 import { seq } from './chain.js';
-import { CW, analyzeClaudeSession, claudeForAnalysis, claudeRootKey, ensureClaudeForAnalysis, initClaudeWorkspace, isClaudeBusy, stopClaudeSession } from './claude-store.js';
 import { canonicalizeSessions, componentRel, componentSessionKey } from './session-key.js';
 
 const api = window.api;
@@ -17,13 +16,13 @@ export const S = reactive({
   files: [],                // [{rel, dir, name}]
   fileApiCount: {},         // rel -> n（分析完成后回写角标）
   selectedFile: null,       // rel（相对前端目录）
-  sessions: [],             // {id,name,file,analyzed,status,term:[{cls,text}],data}
+  sessions: [],             // {id,name,file,projectRoot,claudeKey,claudeId,analyzed,status,data}
   activeId: null,
   sessionSeq: 0,
   analyzing: false,
   currentFn: 'all',
   terminalOpen: false,
-  termHeight: '240px',
+  terminal: { alive: false, error: '' },   // 原生 Claude Code 终端（PTY）状态
   layouts: {},              // "file|fn" -> {nodeName:{x,y}}
   groups: {},               // projectRoot -> [{id,name,files:[rel],children:[Group]}]
   layoutDirty: false,
@@ -36,6 +35,7 @@ export const currentData = () => activeSession()?.analyzed ? activeSession().dat
 export const currentFunctions = () => currentData()?.functions || [];
 export const displayPath = (rel) => rel ? `${S.config.frontend ? S.config.frontend + '/' : ''}${rel}` : '';
 export const fileName = (rel) => rel?.split('/').pop() || '';
+export const setTerminalState = (state) => { Object.assign(S.terminal, state); };
 
 export const stats = computed(() => {
   const fns = currentFunctions();
@@ -55,24 +55,6 @@ export const stats = computed(() => {
   };
 });
 
-/* ---------------- term 行样式 ---------------- */
-export function clsOf(line) {
-  if (line.startsWith('$')) return 'cmd';
-  if (line.startsWith('✓')) return 'ok';
-  if (line.startsWith('[stderr]') || line.startsWith('✗')) return 'err';
-  if (line.startsWith('┌') || line.startsWith('└')) return 'dim';
-  if (line.startsWith('▸') || line.startsWith('⚙')) return 'info';
-  return 'info';
-}
-function pushTerm(s, line) {
-  if (!line) return;
-  for (const l of String(line).split('\n')) {
-    if (!l.trim()) continue;
-    s.term.push({ cls: clsOf(l), text: l });
-  }
-  if (s.term.length > 800) s.term.splice(0, s.term.length - 800);
-}
-
 /* ---------------- 初始化 ---------------- */
 export async function initApp() {
   const [cfg, ses, layouts, groups, ck] = await Promise.all([
@@ -85,29 +67,18 @@ export async function initApp() {
   S.groups = groups || {};
   if (ses?.sessions?.length) {
     S.sessions = ses.sessions.map(s => ({
-      ...s, term: s.term || [], projectRoot: s.projectRoot || S.config.root,
+      ...s, projectRoot: s.projectRoot || S.config.root,
       claudeKey: s.claudeKey || `analysis-${s.id}`,
-      ...(s.claudeId ? {} : { claudeId: null }),
-      claudeStatus: s.claudeStatus || 'idle', claudeError: s.claudeError || '',
-      claudeMessages: [], claudePermissions: []
+      claudeId: s.claudeId || null, claudeError: ''
     }));
     S.sessionSeq = Math.max(0, ...S.sessions.map(s => s.id));
     S.activeId = ses.activeId ?? S.sessions[0].id;
-    const a = activeSession();
-    if (a?.file) S.selectedFile = toFrontendRel(a.file);
   }
   wireEvents();
   await refreshFiles();
-  const workspaceReady = await initClaudeWorkspace();
   // 一组件一会话：清掉旧版无组件归属的全局会话，合并同一组件的重复会话。
   const canonical = canonicalizeSessions(S.sessions, {
-    frontend: S.config.frontend, root: S.config.root, activeId: S.activeId,
-    chatWeight: raw => {
-      const chat = (raw.claudeId && CW.sessions.find(c => c.id === raw.claudeId)) ||
-        (raw.claudeKey && CW.sessions.find(c => c.analysisKey === raw.claudeKey &&
-          claudeRootKey(c.root) === claudeRootKey(raw.projectRoot || S.config.root)));
-      return chat ? (chat.messages || []).length : 0;
-    }
+    frontend: S.config.frontend, root: S.config.root, activeId: S.activeId
   });
   S.sessions = canonical.sessions;
   S.activeId = canonical.activeId;
@@ -116,18 +87,8 @@ export async function initApp() {
   const active = activeSession();
   S.selectedFile = active?.file ? toFrontendRel(active.file) : null;
   if (S.selectedFile && !S.files.find(f => f.rel === S.selectedFile)) S.selectedFile = null;
-  if (workspaceReady) {
-    for (const s of S.sessions) {
-      if (!s.projectRoot || !s.claudeKey) continue;
-      const bound = await ensureClaudeForAnalysis(s);
-      if (bound) {
-        s.claudeId = bound.id;
-        s.claudeMessages = bound.messages || [];
-        s.claudeStatus = bound.status || 'idle';
-        s.claudeModel = bound.model || '';
-      } else s.claudeError = CW.bindingErrors[s.claudeKey] || '';
-    }
-  }
+  // 启动即展示原生终端面板（当前菜单的会话自动恢复）
+  S.terminalOpen = !!active?.file;
   if (S.sessions.length) persistSessions();
   S.ready = true;
 }
@@ -136,61 +97,21 @@ function toFrontendRel(rootRel) {
 }
 
 function wireEvents() {
-  api.onTermLine(({ sessionId, line }) => {
-    const s = S.sessions.find(x => x.id === sessionId);
-    if (s) pushTerm(s, line);
-  });
-  api.onClaudeWorkspaceEvent(event => {
-    const s = S.sessions.find(item => item.claudeId === event?.sessionId);
+  // 原生终端事件：data/exit 由终端组件消费，这里只处理分析结果回填。
+  api.onTerminalEvent(event => {
+    if (event?.type !== 'analysis') return;
+    const s = activeSession();
+    S.analyzing = false;
     if (!s) return;
-    if (event.kind === 'session' && event.session?.id === s.claudeId) {
-      const chat = event.session;
-      s.claudeMessages = chat.messages || [];
-      s.claudeStatus = chat.status || 'idle';
-      s.claudeError = chat.error || '';
-      s.claudeModel = chat.model || '';
-      s.claudeRevision = chat.revision || 0;
-      if (chat.analysis?.status === 'done' && chat.analysis.sessionId === s.id && chat.analysis.data) {
-        s.data = chat.analysis.data;
-        s.analyzed = true;
-        s.status = 'done';
-        S.fileApiCount[toFrontendRel(s.file)] = chat.analysis.data.functions.length;
-      } else if (chat.analysis?.status === 'error') {
-        s.status = 'error';
-        s.claudeError = chat.analysis.error || s.claudeError;
-      } else if (chat.analysis?.status === 'interrupted') {
-        s.status = 'idle';
-      }
-      s.claudePermissions = Object.values(CW.permissionsBySession[s.claudeId] || {});
-      if (chat.analysis?.status === 'running') s.status = 'running';
-      else if (chat.status === 'running' || chat.status === 'starting' || chat.status === 'permission') s.status = 'idle';
-      // 分析状态按会话隔离：其他组件在跑不影响当前会话的按钮和提示。
-      if (s.id === S.activeId) S.analyzing = s.status === 'running';
-      persistSessions();
-    } else if (event.kind === 'permission') {
-      s.claudePermissions = Object.values(CW.permissionsBySession[s.claudeId] || {});
-    } else if (event.kind === 'permission-resolved') {
-      s.claudePermissions = Object.values(CW.permissionsBySession[s.claudeId] || {});
-    }
-  });
-  api.onTermStatus(({ sessionId, status }) => {
-    const s = S.sessions.find(x => x.id === sessionId);
-    if (s && ['running', 'parsing', 'done', 'error'].includes(status)) s.status = status;
-  });
-  api.onAnalysisResult(({ sessionId, ok, data, error }) => {
-    const s = S.sessions.find(x => x.id === sessionId);
-    if (s && s.id === S.activeId) S.analyzing = false;
-    if (!s) return;
-    if (ok && data) {
-      s.data = data; s.analyzed = true; s.status = 'done';
-      s.name = fileName(s.file) || s.name;
+    if (event.ok && event.data) {
+      s.data = event.data; s.analyzed = true; s.status = 'done'; s.claudeError = '';
       S.currentFn = 'all';
-      if (s.file) S.fileApiCount[toFrontendRel(s.file)] = data.functions.length;
-      showToast(`✓ 分析完成：${data.functions.length} 个功能`);
+      if (s.file) S.fileApiCount[toFrontendRel(s.file)] = event.data.functions.length;
+      showToast(`✓ 分析完成：${event.data.functions.length} 个功能`);
     } else {
       s.status = 'error';
-      pushTerm(s, `✗ ${error || '分析失败'}`);
-      showToast('分析失败，详见终端');
+      s.claudeError = event.error || '分析失败';
+      showToast('分析失败，详见终端面板');
     }
     persistSessions();
   });
@@ -211,8 +132,7 @@ export function persistSessions() {
       id: s.id, name: s.name, file: s.file, analyzed: s.analyzed,
       projectRoot: s.projectRoot || S.config.root, claudeKey: s.claudeKey || `analysis-${s.id}`,
       claudeId: s.claudeId || null, backend: s.backend || '',
-      claudeStatus: s.claudeStatus || 'idle', claudeError: s.claudeError || '',
-      status: s.analyzed ? 'done' : 'idle', term: (s.term || []).slice(-200), data: s.analyzed ? s.data : null
+      status: s.analyzed ? 'done' : 'idle', data: s.analyzed ? s.data : null
     }));
     api.saveSessions(plain({ sessions, activeId: S.activeId })).catch(() => {});
   }, 400);
@@ -254,7 +174,21 @@ export function selectFile(rel) {
   }
 }
 
-/* ---------------- 分析 ---------------- */
+/* ---------------- 分析：注入原生终端，从会话日志提取契约 ---------------- */
+function ensureSessionUuid(s) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.claudeId || '')) {
+    s.claudeId = crypto.randomUUID();
+  }
+  return s.claudeId;
+}
+async function waitForTerminal(timeout = 15000) {
+  for (let i = 0; i < timeout / 100; i++) {
+    if (S.terminal.alive) return true;
+    if (S.terminal.error) return false;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return false;
+}
 export async function startAnalysis() {
   const current = activeSession();
   if (!current) return;
@@ -275,36 +209,46 @@ export async function startAnalysis() {
   }
   s.backend = S.config.backend;
   S.selectedFile = selected;
-  s.analyzed = false; s.data = null; s.status = 'running'; s.claudeStatus = 'starting'; s.claudeError = '';
+  s.analyzed = false; s.data = null; s.status = 'running'; s.claudeError = '';
   S.analyzing = true;
   S.terminalOpen = true;
+  ensureSessionUuid(s);
   persistSessions();
-  const result = await analyzeClaudeSession(s);
-  if (!result.ok) {
+  if (!await waitForTerminal()) {
     S.analyzing = false;
-    s.status = 'error'; s.claudeStatus = 'error'; s.claudeError = result.error || '无法开始分析';
-    pushTerm(s, `✗ ${s.claudeError}`);
+    s.status = 'error';
+    s.claudeError = S.terminal.error || '原生 Claude Code 终端未能启动';
+    persistSessions();
+    showToast(s.claudeError);
+    return;
+  }
+  const result = await api.terminalAnalyze({ entryRel: toFrontendRel(s.file), backendRel: s.backend || '' });
+  if (!result?.ok) {
+    S.analyzing = false;
+    s.status = 'error'; s.claudeError = result?.error || '无法开始分析';
     persistSessions();
     showToast(s.claudeError);
   }
 }
+/** 原生中断：向 TUI 发送 Esc（Claude Code 原生的打断当前回复键）。 */
 export function cancelAnalysis() {
   const s = activeSession();
-  if (s?.claudeId && s.status === 'running') void stopClaudeSession(s.claudeId);
+  if (s?.status === 'running') {
+    void api.terminalWrite('\x1b');
+    S.analyzing = false;
+    s.status = 'idle';
+    persistSessions();
+  }
 }
 
 /* ---------------- 会话：按组件创建，一组件一会话 ---------------- */
 function createComponentSession(rel) {
   S.sessionSeq += 1;
   const s = { id: S.sessionSeq, name: fileName(rel), file: displayPath(rel), projectRoot: S.config.root,
-    claudeKey: componentSessionKey(rel), claudeId: null, claudeStatus: 'idle', claudeError: '',
-    analyzed: false, status: 'idle', term: [], data: null };
+    claudeKey: componentSessionKey(rel), claudeId: null, claudeError: '',
+    analyzed: false, status: 'idle', data: null };
   S.sessions.push(s);
-  if (S.config.root) ensureClaudeForAnalysis(s).then(chat => {
-    if (!chat) { s.claudeError = CW.bindingErrors[s.claudeKey] || '无法连接当前会话'; return; }
-    s.claudeId = chat.id; s.claudeMessages = chat.messages || []; s.claudeStatus = chat.status || 'idle';
-    persistSessions();
-  });
+  persistSessions();
   return s;
 }
 export function switchSession(id) {

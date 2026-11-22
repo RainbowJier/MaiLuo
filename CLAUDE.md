@@ -36,12 +36,15 @@ npm run smoke
 
 ### High-Level Flow
 
-1. **User Input**: Select a Vue component file and project root
-2. **Analysis Trigger**: Main process assembles a prompt including component path + backend directory + JSON schema
-3. **Claude Analysis**: Spawns `claude -p --output-format stream-json` subprocess with read-only tools (Read/Glob/Grep)
-4. **Stream Parsing**: Main process collects tool invocations + final message in real-time
-5. **Schema Extraction**: Parses JSON from final message, normalizes, validates against schema
-6. **Rendering**: Renderer displays chain graph (ECharts), tabs for each function, side panels with details
+1. **User Input**: Select a Vue menu (component) in the sidebar; each menu owns exactly one session
+2. **Native Terminal**: Main process spawns the local `claude` TUI in a PTY (node-pty/ConPTY) with
+   `--session-id <uuid> --dangerously-skip-permissions`, rendered in xterm.js — slash commands,
+   `/model`, keybindings are all native Claude Code
+3. **Analysis Trigger**: "分析" injects the analysis prompt into the TUI (bracketed paste so
+   multi-line text does not submit early)
+4. **Side-channel Extraction**: terminal-host tails `~/.claude/projects/<munged-cwd>/<session-id>.jsonl`,
+   waits for the assistant `end_turn` after injection, extracts the ```json contract
+5. **Rendering**: Renderer displays chain graph (ECharts), tabs for each function, side panels with details
 
 ### Directory Structure
 
@@ -49,7 +52,8 @@ npm run smoke
 electron/
   main/
     index.mjs         Window lifecycle, IPC handlers, dev eval harness, session management
-    analyzer.mjs      Claude CLI subprocess spawning, prompt building, JSON extraction/normalization
+    analyzer.mjs      Prompt building, JSON extraction/normalization
+    terminal-host.mjs PTY host: native claude TUI + session-jsonl watcher + analysis orchestration
     project.mjs       Project root detection, Vue file scanning, backend directory inference
     persist.mjs       JSON file read/write for config, sessions, layouts
   preload/
@@ -57,16 +61,17 @@ electron/
 
 src/
   main.js             Vite entry point, Vue app bootstrap
-  App.vue             Three-pane layout: Sidebar | ComponentPanel | DetailPanel
+  App.vue             Three-pane layout: Sidebar | DetailPanel | AgentTerminal
   store.js            Global state (sessions, active chain, analysis progress, layouts)
+  session-key.js      Per-component session identity (canonicalize/merge on load)
   chain.js            Data model normalization, color mapping by node type
   components/
-    Sidebar.vue       Project cards, component list, project settings
-    ComponentPanel.vue Tab switcher for functions within a component
+    Sidebar.vue       Project cards, grouped component menus, project settings
     ChainCard.vue     Collapsible function details (parameters, logic points, branches)
     ChainGraph.vue    ECharts graph visualization with layout persistence
-    DetailPanel.vue   Right sidebar showing full chain data for selected function
-    AgentTerminal.vue Real-time console output from Claude CLI subprocess
+    DetailPanel.vue   Center pane showing full chain data for selected function
+    AgentTerminal.vue Native terminal shell (current-menu name, status, analyze button)
+    ClaudeTerminal.vue xterm.js embed of the native claude TUI (one PTY per active menu)
     ConfigModal.vue   Project root + backend path editor
 
 .verify/              Development utilities
@@ -130,17 +135,14 @@ Represents conditional logic at a node (validation, business rules, permission c
    - Includes component file + backend search path + JSON schema
    - Instructs Claude to trace from Vue events through complete backend
 
-2. **Claude Subprocess** (`analyzer.mjs::runClaudeAnalysis`)
-   - Spawns `claude -p --output-format stream-json --allowedTools Read,Glob,Grep`
-   - Only read access; no file modification ever occurs
-   - Streams tool calls + final message to main process
+2. **Terminal Host** (`terminal-host.mjs::createTerminalHost`)
+   - One live PTY at a time; switching menus stops it and relaunches with the same
+     `--session-id` so the native conversation resumes
+   - Analysis injects the prompt via bracketed paste (multi-line safe), highest permission
 
-3. **Stream Event Handling** (in `index.mjs` IPC handlers)
-   - **tool_call**: Relay to renderer's terminal
-   - **tool_result**: Relay to renderer's terminal
-   - **content_block_start/stop**: Buffer text pieces
-   - **message_delta**: Accumulate final result
-   - **message_stop**: Extract JSON, normalize, send to renderer
+3. **Session Log Watcher** (`terminal-host.mjs`)
+   - Polls `~/.claude/projects/<munged-cwd>/<session-id>.jsonl` for appended bytes
+   - Settles when an assistant line has `stop_reason === 'end_turn'` and the file goes idle
 
 4. **JSON Extraction & Normalization** (`analyzer.mjs::extractJson`, `chain.js`)
    - Try multiple code blocks (from last to first)
@@ -169,17 +171,16 @@ On app startup, if old `%APPDATA%\spring-chain-view` exists, migrate these files
 ## Important Flows
 
 ### Analyzing a Component
-1. User clicks "开始分析" with Vue file selected + project root set
-2. `ipcMain.handle('analyze')` called with `{ file, projectRoot, sessionId }`
-3. `runClaudeAnalysis()` builds prompt + spawns Claude subprocess
-4. Subprocess output streamed to renderer in real-time
-5. Final message extracted, JSON parsed, normalized
-6. Result stored in `sessions.json`, UI updated with tabs + graph
+1. User clicks "分析" (terminal header) or "开始分析" (detail panel) with a Vue menu active
+2. Renderer ensures the session has a CLI uuid (`s.claudeId`) and the PTY is alive
+3. `ipcMain.handle('terminal:analyze')` injects the analysis prompt into the TUI
+4. terminal-host extracts the JSON contract from the session jsonl on turn end
+5. Result stored in `sessions.json`, UI updated with tabs + graph; user can keep chatting natively
 
 ### Session Recovery
-- Each component analysis gets a unique `sessionId`
-- Multiple components can be analyzed in parallel (stored as separate sessions)
-- Switch between tabs to reload prior analysis results from `sessions.json`
+- Each Vue menu owns exactly one session (one CLI `--session-id` uuid)
+- Switching menus stops the current PTY and relaunches the target session's uuid (conversation resumes)
+- Prior analysis results reload from `sessions.json`; `src/session-key.js` canonicalizes/merges on load
 - Layout state preserved per chain in `layouts.json`
 
 ### Graph Rendering
@@ -200,11 +201,15 @@ npm run build
 
 ## Key Implementation Details
 
-### Subprocess Isolation
-- Only `Read`, `Glob`, `Grep` tools allowed (read-only)
-- No file write operations possible from Claude
-- `stream-json` format ensures real-time streaming (not buffered)
-- Subprocess inherits env; no need to pass token explicitly if claude CLI already authenticated
+### Native Terminal Integration
+- `node-pty` (rebuilt for Electron; `npm run rebuild:pty`) spawns `claude` with a real ConPTY
+- The exe is resolved by `terminal-host.mjs::resolveClaudeExecutable` (claude.exe only, never a .cmd wrapper)
+- Launched with `--dangerously-skip-permissions` (analysis must not prompt) and a fixed
+  `--session-id <uuid>` stored per component session in sessions.json
+- All interaction is native Claude Code: slash commands, `/model`, permission behavior, keybindings
+- `ELECTRON_RUN_AS_NODE` is stripped from the child env to avoid PTY regressions
+- On Windows, `node-pty`'s gyp requires `SpectreMitigation` disabled (scripts/patch-node-pty.mjs,
+  wired as npm postinstall) and the rebuild must drop `NoDefaultCurrentDirectoryInExePath` from env
 
 ### ESM in Electron
 - Main process + preload use ESM (`.mjs` extensions)

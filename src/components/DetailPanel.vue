@@ -122,7 +122,6 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { S, stats, startAnalysis, cancelAnalysis, selectFn, currentFunctions, graphSubtitle, fileName, activeSession, showToast } from '../store.js';
-import { claudeForAnalysis } from '../claude-store.js';
 import ChainGraph from './ChainGraph.vue';
 import ChainCard from './ChainCard.vue';
 
@@ -140,7 +139,6 @@ const subtitlePath = computed(() => {
   return S.selectedFile ? (S.config.frontend ? S.config.frontend + '/' : '') + S.selectedFile
     : (S.config.root ? '从左侧选择一个 Vue 组件开始分析' : '未配置项目');
 });
-const currentClaude = computed(() => activeSession() ? claudeForAnalysis(activeSession()) : null);
 const canAnalyze = computed(() => !S.analyzing && !!(S.selectedFile || activeSession()?.file) && !!S.config.root &&
   (!activeSession()?.projectRoot || activeSession().projectRoot === S.config.root));
 const analyzeLabel = computed(() => S.analyzing ? '分析中…' : (hasResult.value ? '重新分析' : '开始分析'));
@@ -150,7 +148,7 @@ const visibleFunctions = computed(() =>
 const graphKey = computed(() => `${S.activeId}|${S.currentFn}|${functions.value.length}`);
 function resetCurrent() {
   const s = activeSession();
-  if (s) { s.analyzed = false; s.data = null; s.term = []; s.status = 'idle'; }
+  if (s) { s.analyzed = false; s.data = null; s.status = 'idle'; }
   S.currentFn = 'all';
   showToast('已重置当前会话');
 }

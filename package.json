@@ -10,10 +10,15 @@
     "build": "node scripts/dev.mjs build",
     "preview": "node scripts/dev.mjs preview",
     "smoke": "node scripts/smoke.mjs",
-    "test:workspace": "node --test scripts/claude-workspace.test.mjs scripts/claude-models.test.mjs scripts/sessions.test.mjs"
+    "postinstall": "node scripts/patch-node-pty.mjs",
+    "rebuild:pty": "node scripts/patch-node-pty.mjs && node -e \"const{spawnSync}=require('child_process');const env={...process.env};delete env.NoDefaultCurrentDirectoryInExePath;const r=spawnSync('npx',['--yes','@electron/rebuild','-f','-w','node-pty','-v','33.4.11'],{stdio:'inherit',env,shell:process.platform==='win32'});process.exit(r.status||0)\"",
+    "test:workspace": "node --test scripts/terminal-host.test.mjs scripts/sessions.test.mjs"
   },
   "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "echarts": "^5.5.1",
+    "node-pty": "^1.1.0",
     "vue": "^3.5.13"
   },
   "devDependencies": {

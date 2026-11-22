@@ -4,13 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
 import { readJson, writeJson } from './persist.mjs';
 import { detectProjects, scanVueFiles } from './project.mjs';
-import { runClaudeAnalysis, buildPrompt } from './analyzer.mjs';
-import { createClaudeWorkspace } from './claude-workspace.mjs';
-import { loadClaudeModels } from './claude-models.mjs';
+import { createTerminalHost } from './terminal-host.mjs';
+import nodePty from 'node-pty';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let win = null;
-const running = new Map();   // sessionId -> controller
 
 /* 调试日志：渲染进程 console / 预加载错误 / 加载失败 统一落到 .verify/renderer.log */
 const LOG_FILE = path.join(app.getAppPath(), '.verify', 'renderer.log');
@@ -114,22 +112,21 @@ function createWindow() {
   setupDevEvalHarness();
 }
 
-/* 每个组件分析会话绑定一条 Claude Code 原生历史。 */
-const claudeWorkspace = createClaudeWorkspace({
-  load: () => readJson('claude-workspace.json', { version: 1, sessions: [], activeByRoot: {} }),
-  save: (data) => writeJson('claude-workspace.json', data),
+/* 原生终端：PTY 里跑本机 claude TUI，会话 jsonl 用于分析结果提取。 */
+const terminalHost = createTerminalHost({
   notify: (event) => {
     if (win && !win.isDestroyed() && !win.webContents.isDestroyed())
-      win.webContents.send('claude-workspace:event', event);
-  }
+      win.webContents.send('terminal:event', event);
+  },
+  spawnPty: (file, args, options) => nodePty.spawn(file, args, options),
+  debug: (line) => debugLog(line)
 });
-for (const [action, method] of Object.entries({
-  load: 'snapshot', create: 'create', send: 'send', analyze: 'analyze', stop: 'stop', respond: 'respond'
-})) {
-  ipcMain.handle(`claude-workspace:${action}`, async (event, data) => {
+setInterval(() => terminalHost.tick(), 1000).unref();
+for (const action of ['start', 'write', 'resize', 'stop', 'analyze']) {
+  ipcMain.handle(`terminal:${action}`, async (event, data) => {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
-      throw new Error('不受信任的工作区请求');
-    try { return await claudeWorkspace[method](data); }
+      throw new Error('不受信任的终端请求');
+    try { return terminalHost[action](data || {}); }
     catch (e) { return { ok: false, error: e.message }; }
   });
 }
@@ -138,8 +135,8 @@ app.on('before-quit', (event) => {
   if (workspaceClosing) return;
   event.preventDefault();
   workspaceClosing = true;
-  for (const ctrl of running.values()) ctrl.cancel();
-  claudeWorkspace.dispose().catch(e => debugLog(`workspace shutdown: ${e.message}`)).finally(() => app.quit());
+  terminalHost.dispose();
+  app.quit();
 });
 
 /* ---------------- IPC ---------------- */
@@ -167,13 +164,6 @@ ipcMain.handle('layouts:save', async (_e, data) => { await writeJson('layouts.js
 ipcMain.handle('groups:load', async () => readJson('groups.json', {}));
 ipcMain.handle('groups:save', async (_e, data) => { await writeJson('groups.json', data); return true; });
 
-ipcMain.handle('claude:models', async (event, { root } = {}) => {
-  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
-    throw new Error('不受信任的模型清单请求');
-  const cwd = typeof root === 'string' && path.isAbsolute(root) ? root : process.cwd();
-  return { ok: true, ...loadClaudeModels({ cwd }) };
-});
-
 ipcMain.handle('claude:check', async () => {
   const { execFile } = await import('node:child_process');
   return new Promise((resolve) => {
@@ -181,31 +171,6 @@ ipcMain.handle('claude:check', async () => {
       resolve(err ? { ok: false } : { ok: true, version: String(stdout).trim() });
     });
   });
-});
-
-ipcMain.handle('claude:analyze', async (_e, { sessionId, root, backendRel, entryRel }) => {
-  if (running.has(sessionId)) return { ok: false, error: '该会话已有分析在进行' };
-  const prompt = buildPrompt(entryRel, backendRel);
-  const send = (ch, payload) => { if (!win.isDestroyed()) win.webContents.send(ch, { sessionId, ...payload }); };
-
-  const ctrl = runClaudeAnalysis({
-    cwd: root,
-    prompt,
-    onLine: (line) => send('term:line', { line }),
-    onStatus: (st) => send('term:status', { status: st })
-  });
-  running.set(sessionId, ctrl);
-  ctrl.promise.then((r) => {
-    running.delete(sessionId);
-    send('analysis:result', r.ok ? { ok: true, data: r.data } : { ok: false, error: r.error });
-  });
-  return { ok: true, started: true };
-});
-
-ipcMain.handle('claude:cancel', async (_e, { sessionId }) => {
-  const ctrl = running.get(sessionId);
-  if (ctrl) { ctrl.cancel(); running.delete(sessionId); }
-  return true;
 });
 
 app.whenReady().then(() => {

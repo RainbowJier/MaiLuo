@@ -7,7 +7,8 @@ export default defineConfig({
     build: {
       outDir: 'out/main',
       lib: { entry: resolve(__dirname, 'electron/main/index.mjs') },
-      rollupOptions: { output: { entryFileNames: 'index.mjs', format: 'es' } }
+      // node-pty 是原生模块，必须保持外置（从 node_modules 加载预编译产物）
+      rollupOptions: { external: ['node-pty'], output: { entryFileNames: 'index.mjs', format: 'es' } }
     }
   },
   preload: {
