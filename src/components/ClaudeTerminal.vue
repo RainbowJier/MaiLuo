@@ -55,6 +55,16 @@ function restart() {
 
 function focusTerminal() { try { term?.focus(); } catch { /* disposed */ } }
 
+/**
+ * 容器显示前的隐藏态会让 fit 静默失效（测量为 0），而面板显示的瞬间
+ * ResizeObserver 只触发一次，可能早于 xterm 字宽测量完成；之后容器尺寸
+ * 不再变化就没有人重试，终端会一直卡在默认 80×24。双 rAF + 延迟兜底。
+ */
+function refit() {
+  requestAnimationFrame(() => requestAnimationFrame(() => { try { fit.fit(); } catch { /* disposed */ } }));
+  setTimeout(() => { try { fit?.fit(); } catch { /* disposed */ } }, 400);
+}
+
 function handleEvent(event) {
   if (!event) return;
   if (event.type === 'data' && term) {
@@ -80,14 +90,13 @@ onMounted(() => {
   fit = new FitAddon();
   term.loadAddon(fit);
   term.open(hostEl.value);
-  try { fit.fit(); } catch { /* container not laid out yet */ }
   term.onData(data => { void window.api.terminalWrite(data); });
   term.onResize(({ cols, rows }) => { void window.api.terminalResize(cols, rows); });
   unsubscribe = window.api.onTerminalEvent(handleEvent);
-  observer = new ResizeObserver(() => {
-    try { fit.fit(); } catch { /* hidden */ }
-  });
+  observer = new ResizeObserver(refit);
   observer.observe(hostEl.value);
+  // 字体加载会改变字宽度量，容器尺寸不变时 ResizeObserver 不会触发，需显式重排
+  document.fonts?.ready?.then(refit);
   setTerminalState({ alive: false, error: '' });
   void start();
 });
@@ -96,6 +105,7 @@ watch(() => [S.activeId, session()?.claudeId, session()?.projectRoot], () => {
   alive.value = false;
   void start();
 });
+watch(alive, v => { if (v) refit(); });
 
 onBeforeUnmount(() => {
   unsubscribe?.();
@@ -106,8 +116,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.ct-wrap { position: relative; flex: 1; min-height: 0; display: flex; background: #26251f; padding: 6px 4px 2px 10px; }
+.ct-wrap { position: relative; flex: 1; min-height: 0; display: flex; background: #26251f; }
 .ct-host { flex: 1; min-width: 0; min-height: 0; }
+/* xterm.css 给视口硬编码了纯黑底色；主题内联色未生效时四周就会露黑边，这里按终端主题钉死 */
+.ct-wrap :deep(.xterm) { padding: 0; background: #26251f; }
+.ct-wrap :deep(.xterm-viewport) { background-color: #26251f !important; }
 .ct-banner { position: absolute; inset: auto 10px 10px 10px; padding: 8px 10px; color: #f29d84; background: #3a2a24; border: 1px solid #6b4a3f; border-radius: 7px; font-size: 12px; }
 .ct-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; background: rgba(38, 37, 31, 0.82); color: #aaa69b; font-size: 12px; }
 .ct-overlay button { padding: 6px 14px; border: 1px solid #777064; border-radius: 6px; background: #393630; color: #eee; cursor: pointer; }

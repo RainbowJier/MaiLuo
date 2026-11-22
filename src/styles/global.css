@@ -252,8 +252,7 @@ h1, h2, h3, .serif { font-family: Georgia, 'Times New Roman', 'Songti SC', 'SimS
 .t-btn.analyze { width: auto; padding: 0 10px; font-size: 11px; font-weight: 600; background: var(--accent-soft); color: var(--accent-dark); border: 1px solid transparent; }
 .t-btn.analyze:hover { background: var(--accent); color: #fff; }
 .t-btn.analyze:disabled { opacity: .5; cursor: default; }
-.terminal { background: var(--terminal-bg); flex: 1; min-height: 0; padding: 14px 18px; overflow-y: auto; font-family: 'Cascadia Code', Consolas, 'Courier New', monospace; font-size: 12px; line-height: 1.9; color: #E8E4D9; }
-.agent-terminal .cc-conversation { flex: 1; min-height: 0; height: auto; }
+/* xterm 根元素自带 terminal 类名；这里禁止再给它加内边距/行高，否则画布内缩露出纯黑视口 */
 .t-cmd { color: #D97757; }
 .t-ok { color: #8FB98A; }
 .t-info { color: #C9C5B8; }
