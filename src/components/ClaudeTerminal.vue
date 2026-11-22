@@ -118,8 +118,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.ct-wrap { position: relative; flex: 1; min-height: 0; display: flex; background: #26251f; }
-.ct-host { flex: 1; min-width: 0; min-height: 0; }
+.ct-wrap { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; background: #26251f; }
+.ct-host { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 /* xterm.css 给视口硬编码了纯黑底色；主题内联色未生效时四周就会露黑边，这里按终端主题钉死 */
 .ct-wrap :deep(.xterm) { padding: 0; background: #26251f; }
 .ct-wrap :deep(.xterm-viewport) { background-color: #26251f !important; scrollbar-color: #4a463daa transparent; }

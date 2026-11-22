@@ -231,9 +231,11 @@ h1, h2, h3, .serif { font-family: Georgia, 'Times New Roman', 'Songti SC', 'SimS
 .toggle-hint { margin-left: auto; font-size: 11px; color: var(--text-secondary); }
 
 /* ============ 终端面板（右侧停靠） ============ */
-.agent-terminal { position: relative; width: 420px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--bg-sidebar); }
+/* overflow hidden 封闭面板：超长 IME 组合串会把内部 textarea/composition 撑到几千 px 宽，
+   不裁掉就会顶开页面布局，在面板与窗口边缘之间露出一条页面底色 */
+.agent-terminal { position: relative; width: 420px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--bg-sidebar); overflow: hidden; min-width: 0; }
 .agent-terminal.closed { display: none; }
-.terminal-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; cursor: ew-resize; z-index: 30; }
+.terminal-resize { position: absolute; left: 0; top: 0; bottom: 0; width: 7px; cursor: ew-resize; z-index: 30; }
 .terminal-resize:hover { background: rgba(217, 119, 87, 0.25); }
 .terminal-header { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 12px; border-bottom: 1px solid var(--border); }
 .terminal-session-name { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 240px; color: var(--accent-dark); font-size: 11.5px; font-weight: 600; }
