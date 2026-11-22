@@ -76,7 +76,8 @@ export function createTerminalHost({ notify, spawnPty, env = process.env, home =
     if (term && term.root === root && term.sessionId === sessionId) return { ok: true, restarted: false };
     stop(false);
     const file = claudeSessionFile(root, sessionId, { env, home });
-    const args = ['--session-id', sessionId, '--dangerously-skip-permissions'];
+    // 会话已存在时必须用 --resume 续聊；再传 --session-id 会报 "already in use"
+    const args = [fs.existsSync(file) ? '--resume' : '--session-id', sessionId, '--dangerously-skip-permissions'];
     if (model) args.push('--model', model);
     const cleanEnv = { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
     delete cleanEnv.ELECTRON_RUN_AS_NODE;

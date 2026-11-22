@@ -61,6 +61,27 @@ test('spawns the native CLI with a fixed session id and highest permission', asy
   } finally { host.dispose(); f.cleanup(); }
 });
 
+test('relaunching an existing session resumes it instead of reusing --session-id', async () => {
+  const f = fixture();
+  const launches = [];
+  const host = createTerminalHost({
+    notify: () => {}, env: f.env, home: f.home,
+    spawnPty: (file, args) => { launches.push(args); return fakePty(); }
+  });
+  try {
+    await host.start({ root: f.root, sessionId: UUID });
+    assert.deepEqual(launches[0].slice(0, 2), ['--session-id', UUID], 'fresh session pins its id');
+    // 模拟 CLI 已把会话落盘
+    const file = claudeSessionFile(f.root, UUID, { env: f.env, home: f.home });
+    appendFileSync(file, JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }) + '\n');
+    await host.start({ root: f.root, sessionId: '99999999-8888-7777-6666-555555555555' }); // switch away
+    await host.start({ root: f.root, sessionId: UUID }); // back → must resume
+    assert.ok(launches.at(-1).includes('--resume'), 'existing session must resume, not collide on --session-id');
+    assert.ok(!launches.at(-1).includes('--session-id'), 'no --session-id when the file exists');
+    assert.ok(launches.at(-1).includes('--dangerously-skip-permissions'));
+  } finally { host.dispose(); f.cleanup(); }
+});
+
 test('restarting the same session is idempotent; switching swaps the pty', async () => {
   const f = fixture();
   const ptys = [];
