@@ -43,12 +43,13 @@ export function resolveClaudeExecutable(env = process.env, platform = process.pl
 /** One CLI turn; the CLI owns its conversation history and resumes via session ID.
  * Wire shapes follow the official Agent SDK subprocess transport / query protocol.
  */
-export function createClaudeTurn({ root, resume, text, autoApprove, emit, spawnProcess = spawn, executable }) {
+export function createClaudeTurn({ root, resume, text, model, autoApprove, emit, spawnProcess = spawn, executable }) {
   const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json',
     '--include-partial-messages', '--verbose'];
   // 组件分析默认最高权限直接执行；普通对话经 stdio 授权卡片逐项确认。
   if (autoApprove) args.push('--dangerously-skip-permissions');
   else args.push('--permission-prompt-tool', 'stdio', '--permission-mode', 'manual');
+  if (model) args.push('--model', model);
   if (resume) args.push('--resume', resume);
   const env = { ...process.env };
   delete env.CLAUDECODE;
@@ -352,11 +353,15 @@ export function createClaudeWorkspace({ load, save, notify, makeTurn = createCla
       publish(s, true);
       return { ok: true, session: clone(s) };
     },
-    async send({ id, text, contextFile, displayText, autoApprove = false } = {}) {
+    async send({ id, text, contextFile, displayText, model, autoApprove = false } = {}) {
       await ready;
       const s = get(id);
       if (disposed || BUSY.has(s.status) || live.has(id)) throw new Error('当前对话正在运行');
       if (typeof text !== 'string' || !text.trim() || text.length > 100_000) throw new Error('请输入 1–100000 字的消息');
+      if (model != null) {
+        if (typeof model !== 'string' || !model.trim() || model.length > 100 || /[\s"']/.test(model)) throw new Error('无效的模型名称');
+        model = model.trim();
+      }
       if (!existsSync(s.root) || !statSync(s.root).isDirectory()) throw new Error('项目目录已不存在，请重新配置项目');
       let prompt = text.trim();
       if (contextFile && typeof contextFile === 'string') {
@@ -371,7 +376,7 @@ export function createClaudeWorkspace({ load, save, notify, makeTurn = createCla
       publish(s, true);
       try {
         let turn;
-        turn = makeTurn({ root: s.root, resume: s.cliSessionId, text: prompt, autoApprove, emit: e => {
+        turn = makeTurn({ root: s.root, resume: s.cliSessionId, text: prompt, model, autoApprove, emit: e => {
           if (e.kind === 'closed') { turns.delete(turn); return; }
           receive(s, e);
         } });

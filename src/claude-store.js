@@ -4,8 +4,9 @@ const record = () => Object.create(null);
 const busyStatuses = new Set(['starting', 'running', 'permission']);
 const restartMessage = 'Claude Code 接口尚未加载，请完全退出并重新启动 MaiLuo。';
 const storageKey = 'mailuo.claude-session-drafts.v1';
+const modelKey = 'mailuo.claude-model.v1';
 export const CW = reactive({
-  ready: false, loading: false, error: '', storageError: '', unavailable: false,
+  ready: false, loading: false, error: '', storageError: '', unavailable: false, model: '',
   sessions: [], draftsById: record(), permissionsBySession: record(),
   operationsById: record(), bindingErrors: record()
 });
@@ -68,6 +69,13 @@ function saveDrafts() {
   clearTimeout(saveTimer);
   try { window.localStorage.setItem(storageKey, JSON.stringify(CW.draftsById)); } catch {}
 }
+/** 模型随轮次下发（--model），空值跟随 CLI 默认；下一轮生效。 */
+export function setClaudeModel(value) {
+  const next = text(value).trim().slice(0, 100);
+  if (/[\s"']/.test(next)) return;
+  CW.model = next;
+  try { window.localStorage.setItem(modelKey, next); } catch {}
+}
 export function initClaudeWorkspace() {
   if (initialization) return initialization;
   const currentEpoch = ++epoch;
@@ -81,6 +89,8 @@ export function initClaudeWorkspace() {
   try {
     const drafts = JSON.parse(window.localStorage.getItem(storageKey) || '{}');
     for (const [id, draft] of Object.entries(drafts)) if (typeof draft === 'string') CW.draftsById[id] = draft;
+    const savedModel = window.localStorage.getItem(modelKey);
+    if (typeof savedModel === 'string' && !/[\s"']/.test(savedModel)) CW.model = savedModel.slice(0, 100);
   } catch {}
   window.addEventListener('beforeunload', disposeClaudeWorkspace);
   initialization = (async () => {
@@ -185,7 +195,7 @@ export async function sendClaudeMessage({ id, text: message, contextFile }) {
   if (!message?.trim() || isClaudeBusy(id)) return { ok: false };
   const op = operation(id), version = draftVersions.get(id) || 0;
   op.sending = true; op.error = '';
-  const result = await invoke('claudeWorkspaceSend', { id, text: message, contextFile });
+  const result = await invoke('claudeWorkspaceSend', { id, text: message, contextFile, ...(CW.model ? { model: CW.model } : {}) });
   op.sending = false;
   if (!result.ok) op.error = result.error;
   else if ((draftVersions.get(id) || 0) === version && CW.draftsById[id] === message) setClaudeDraft(id, '');
@@ -200,7 +210,7 @@ export async function analyzeClaudeSession(analysisSession) {
   analysisSession.claudeStatus = 'starting';
   analysisSession.claudeError = '';
   const result = await invoke('claudeWorkspaceAnalyze', { id: chat.id, analysisSessionId: analysisSession.id,
-    entryRel: analysisSession.file, backendRel: analysisSession.backend || '' });
+    entryRel: analysisSession.file, backendRel: analysisSession.backend || '', ...(CW.model ? { model: CW.model } : {}) });
   if (!result.ok) { analysisSession.claudeStatus = 'error'; analysisSession.claudeError = result.error || ''; }
   return result;
 }

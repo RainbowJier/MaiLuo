@@ -2,17 +2,11 @@
   <div class="agent-terminal" :class="{ closed: !S.terminalOpen }" :style="{ width }">
     <div class="terminal-resize" title="拖动调整宽度" @mousedown="startResize"></div>
     <div class="terminal-header">
-      <div class="terminal-tabs">
-        <div v-for="s in S.sessions" :key="s.id" class="terminal-tab"
-             :class="{ active: s.id === S.activeId }" :title="s.file || s.name"
-             @click="switchSession(s.id)">
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M3 4.5L6.5 8 3 11.5M8 12h5"/>
-          </svg>
-          {{ s.name }}
-          <span v-if="['running','parsing','starting','permission'].includes(s.claudeStatus) || s.status === 'running' || s.status === 'parsing'" class="tab-run"></span>
-        </div>
-      </div>
+      <select class="terminal-tab-select" :value="S.activeId ?? ''" title="当前组件会话（在左侧菜单点组件切换）"
+              :disabled="!S.sessions.length" @change="onSwitch($event.target.value)">
+        <option v-if="!S.sessions.length" value="">未选择组件</option>
+        <option v-for="s in S.sessions" :key="s.id" :value="s.id">{{ s.name }}</option>
+      </select>
       <div class="terminal-status">
         <span class="status-dot" :class="statusClass"></span>{{ statusText }}
       </div>
@@ -47,6 +41,10 @@ const statusText = computed(() => {
   return statusMap[status] || statusMap[s?.status] || '空闲';
 });
 const statusClass = computed(() => activeSession()?.claudeStatus === 'running' ? 'running' : activeSession()?.status || '');
+function onSwitch(value) {
+  const id = Number(value);
+  if (Number.isSafeInteger(id)) switchSession(id);
+}
 
 function toggleMax() {
   if (width.value === '55vw') width.value = prevW;

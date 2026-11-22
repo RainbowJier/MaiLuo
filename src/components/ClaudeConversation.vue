@@ -50,7 +50,21 @@
     <form class="cc-composer" @submit.prevent="send">
       <div v-if="contextFile" class="cc-context">当前组件 · {{ contextFile }}</div>
       <textarea ref="inputEl" :value="draft" :disabled="!session || !CW.ready" rows="2" maxlength="100000" placeholder="在当前分析会话中向 Claude Code 提问…" @input="setDraft($event.target.value)" @keydown="keydown" @compositionstart="composing=true" @compositionend="composing=false" />
-      <footer><span>Enter 发送 · Shift + Enter 换行<span v-if="busy"> · 可继续编写草稿</span></span><button v-if="busy" type="button" class="cc-stop" :disabled="stopping" @click="stop">■ {{ stopping ? '正在停止…' : '停止' }}</button><button v-else type="submit" :disabled="!canSend">发送 ↑</button></footer>
+      <footer>
+        <input class="cc-model-input" list="cc-model-list" :value="CW.model" title="模型（下一轮生效，留空跟随 CLI 默认）" placeholder="默认模型" spellcheck="false" autocomplete="off"
+               @change="setModel($event.target.value)" @keydown.enter.stop.prevent="$event.target.blur()" />
+        <datalist id="cc-model-list">
+          <option value="claude-opus-5-5"></option>
+          <option value="claude-sonnet-5-5"></option>
+          <option value="claude-sonnet-5"></option>
+          <option value="claude-haiku-5-5"></option>
+          <option value="opus"></option>
+          <option value="sonnet"></option>
+          <option value="haiku"></option>
+        </datalist>
+        <span>Enter 发送 · Shift + Enter 换行<span v-if="busy"> · 可继续编写草稿</span><span v-if="session?.model"> · 当前 {{ session.model }}</span></span>
+        <button v-if="busy" type="button" class="cc-stop" :disabled="stopping" @click="stop">■ {{ stopping ? '正在停止…' : '停止' }}</button><button v-else type="submit" :disabled="!canSend">发送 ↑</button>
+      </footer>
       <p v-if="operationError" class="cc-error">{{ operationError }}</p>
     </form>
   </section>
@@ -61,7 +75,7 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { S, activeSession, displayPath, fileName as getFileName, showToast, startAnalysis } from '../store.js';
 import { CW, analyzeClaudeSession, claudeForAnalysis, claudePermissions, claudeStatus, ensureClaudeForAnalysis,
   initClaudeWorkspace, isClaudeBusy, respondClaudePermission, retryClaudeWorkspace, sendClaudeMessage,
-  setClaudeDraft, stopClaudeSession } from '../claude-store.js';
+  setClaudeDraft, setClaudeModel, stopClaudeSession } from '../claude-store.js';
 const scrollEl = ref(null), inputEl = ref(null);
 const bridgeReady = ref(false), followTail = ref(true), composing = ref(false), answerValues = ref({});
 let mounted = false;
@@ -117,6 +131,7 @@ onBeforeUnmount(()=>{ mounted=false; bridgeReady.value=false; });
 watch(()=>[S.activeId,S.config.root,analysis.value?.file],()=>void prepare());
 watch(()=>[session.value?.revision,messages.value.length,permissions.value.length],async()=>{await nextTick();if(followTail.value&&scrollEl.value)scrollEl.value.scrollTop=scrollEl.value.scrollHeight;});
 function setDraft(value){if(session.value)setClaudeDraft(session.value.id,value);}
+function setModel(value){setClaudeModel(value);}
 async function send(){if(!canSend.value)return;if(!session.value){await prepare();}if(!session.value)return;const id=session.value.id;const result=await sendClaudeMessage({id,text:draft.value,contextFile:contextFile.value});if(!result.ok&&result.error)showToast(result.error);}
 async function runAnalysis(){ await startAnalysis(); }
 async function suggestAnalysis(){ if(!contextFile.value)return; setDraft(`请解释当前组件 ${contextFile.value} 的功能和 API 调用流程。`); await nextTick();inputEl.value?.focus(); }
@@ -131,5 +146,5 @@ defineExpose({ runAnalysis, analyzeCurrent });
 </script>
 
 <style scoped>
-.cc-conversation{position:relative;display:flex;flex-direction:column;height:100%;min-height:0;background:var(--terminal-bg);color:#e8e4d9;font:12px/1.65 'Cascadia Code',Consolas,'Courier New',monospace}.cc-messages{flex:1;min-height:0;overflow:auto;padding:14px 16px}.cc-message{margin:0 0 14px;white-space:pre-wrap;overflow-wrap:anywhere}.cc-message header,.cc-permission header{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;color:#d97757}.cc-message time,.cc-permission header span{color:#aaa69b;font-size:10px}.cc-user{color:#c9c5b8}.cc-assistant{color:#f5f2e9}.cc-system{color:#d9bd83}.cc-text{white-space:pre-wrap;overflow-wrap:anywhere}.cc-tool,.cc-permission{padding:9px 10px;margin:0 0 10px;border:1px solid #605b50;border-radius:7px;background:#302e2a}.cc-tool summary,.cc-permission details summary{display:flex;justify-content:space-between;cursor:pointer;color:#e1c281}.cc-tool pre,.cc-permission pre{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:#ddd8ce}.cc-permission{border-color:#b08034}.cc-permission footer,.cc-composer footer{display:flex;justify-content:flex-end;gap:8px;align-items:center}.cc-permission button,.cc-composer button{padding:5px 10px;border:1px solid #777064;border-radius:6px;background:#393630;color:#eee;cursor:pointer}.cc-permission button:last-child,.cc-composer button[type=submit]{background:#d97757;border-color:#d97757;color:white}.cc-option{display:flex;gap:6px;margin:6px 0}.cc-option small{color:#aaa}.cc-other,.cc-composer textarea{box-sizing:border-box;width:100%;background:#242320;color:#f5f2e9;border:1px solid #625d52;border-radius:6px;padding:8px;font:inherit}.cc-error,.cc-analysis-error{color:#f29d84;white-space:pre-wrap}.cc-banner{padding:5px 9px;color:#f29d84;border-bottom:1px solid #635b4c}.cc-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:120px;gap:8px;text-align:center;color:#aaa69b}.cc-suggestion,.cc-jump{cursor:pointer;color:#e0c78d}.cc-context{margin-bottom:5px;color:#9bb3db;font-size:10px}.cc-composer{flex-shrink:0;padding:8px 12px 10px;border-top:1px solid #514d44;background:#302e2a}.cc-composer textarea{resize:vertical;min-height:50px;max-height:180px}.cc-composer footer{margin-top:6px}.cc-composer footer>span{margin-right:auto;color:#aaa69b;font-size:10px}.cc-composer button:disabled,.cc-permission button:disabled{opacity:.5;cursor:default}.cc-stop{color:#f29d84!important;border-color:#a85b48!important}.cc-jump{position:absolute;bottom:110px;left:50%;transform:translateX(-50%);padding:4px 10px;border-radius:14px;background:#393630;border:1px solid #625d52}.cc-conversation :focus-visible{outline:2px solid #d97757;outline-offset:2px}
+.cc-conversation{position:relative;display:flex;flex-direction:column;height:100%;min-height:0;background:var(--terminal-bg);color:#e8e4d9;font:12px/1.65 'Cascadia Code',Consolas,'Courier New',monospace}.cc-messages{flex:1;min-height:0;overflow:auto;padding:14px 16px}.cc-message{margin:0 0 14px;white-space:pre-wrap;overflow-wrap:anywhere}.cc-message header,.cc-permission header{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;color:#d97757}.cc-message time,.cc-permission header span{color:#aaa69b;font-size:10px}.cc-user{color:#c9c5b8}.cc-assistant{color:#f5f2e9}.cc-system{color:#d9bd83}.cc-text{white-space:pre-wrap;overflow-wrap:anywhere}.cc-tool,.cc-permission{padding:9px 10px;margin:0 0 10px;border:1px solid #605b50;border-radius:7px;background:#302e2a}.cc-tool summary,.cc-permission details summary{display:flex;justify-content:space-between;cursor:pointer;color:#e1c281}.cc-tool pre,.cc-permission pre{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:#ddd8ce}.cc-permission{border-color:#b08034}.cc-permission footer,.cc-composer footer{display:flex;justify-content:flex-end;gap:8px;align-items:center}.cc-permission button,.cc-composer button{padding:5px 10px;border:1px solid #777064;border-radius:6px;background:#393630;color:#eee;cursor:pointer}.cc-permission button:last-child,.cc-composer button[type=submit]{background:#d97757;border-color:#d97757;color:white}.cc-option{display:flex;gap:6px;margin:6px 0}.cc-option small{color:#aaa}.cc-other,.cc-composer textarea{box-sizing:border-box;width:100%;background:#242320;color:#f5f2e9;border:1px solid #625d52;border-radius:6px;padding:8px;font:inherit}.cc-error,.cc-analysis-error{color:#f29d84;white-space:pre-wrap}.cc-banner{padding:5px 9px;color:#f29d84;border-bottom:1px solid #635b4c}.cc-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:120px;gap:8px;text-align:center;color:#aaa69b}.cc-suggestion,.cc-jump{cursor:pointer;color:#e0c78d}.cc-context{margin-bottom:5px;color:#9bb3db;font-size:10px}.cc-composer{flex-shrink:0;padding:8px 12px 10px;border-top:1px solid #514d44;background:#302e2a}.cc-composer textarea{resize:vertical;min-height:50px;max-height:180px}.cc-composer footer{margin-top:6px}.cc-composer footer>span{margin-right:auto;color:#aaa69b;font-size:10px}.cc-model-input{width:130px;flex-shrink:0;background:#242320;color:#9fc3e8;border:1px solid #625d52;border-radius:6px;padding:4px 8px;font:11px 'Cascadia Code',Consolas,monospace}.cc-composer button:disabled,.cc-permission button:disabled{opacity:.5;cursor:default}.cc-stop{color:#f29d84!important;border-color:#a85b48!important}.cc-jump{position:absolute;bottom:110px;left:50%;transform:translateX(-50%);padding:4px 10px;border-radius:14px;background:#393630;border:1px solid #625d52}.cc-conversation :focus-visible{outline:2px solid #d97757;outline-offset:2px}
 </style>

@@ -33,11 +33,13 @@ test('relative PATH resolves to an absolute validated executable', () => {
 test('initializes stdio, keeps Chinese text intact, and deduplicates partial/final text IDs', () => {
   const child = fakeProcess(), events = [];
   let launch;
-  const turn = createClaudeTurn({ root: process.cwd(), text: '解释组件', executable: 'claude-test',
+  const turn = createClaudeTurn({ root: process.cwd(), text: '解释组件', model: 'glm-test', executable: 'claude-test',
     emit: e => events.push(e), spawnProcess: (...args) => { launch = args; return child; } });
   assert.equal(launch[2].shell, false);
   assert.ok(!launch[1].includes('--dangerously-skip-permissions'));
   assert.ok(launch[1].includes('--permission-prompt-tool'), 'chat turns must ask via stdio permission cards');
+  assert.deepEqual(launch[1].slice(launch[1].indexOf('--model'), launch[1].indexOf('--model') + 2), ['--model', 'glm-test'],
+    'requested model must be forwarded to the CLI');
   assert.ok(!launch[1].includes('--tools'), 'analysis must keep the same installed native Claude Code tool configuration');
   assert.equal(child.commands[0].request.subtype, 'initialize');
   assert.equal(child.commands.length, 1);
@@ -118,8 +120,9 @@ test('project sessions resume native IDs; stopped requests expire, data survives
   assert.equal(analyzed.analysis.status, 'done');
   assert.equal(analyzed.analysis.sessionId, 1);
   assert.equal(analyzed.analysis.data.functions[0].name, '查询');
-  await workspace.send({ id: session.id, text: '第一轮' });
+  await workspace.send({ id: session.id, text: '第一轮', model: 'm-x' });
   assert.notEqual(spec.autoApprove, true, 'chat turns must keep per-action confirmation');
+  assert.equal(spec.model, 'm-x', 'send must forward the requested model');
   await assert.rejects(workspace.send({ id: session.id, text: '重复请求' }), /正在运行/);
   spec.emit({ kind: 'text', id: 'answer', text: '第一', replace: true });
   spec.emit({ kind: 'text', id: 'answer', text: '轮', replace: false });
@@ -136,6 +139,7 @@ test('project sessions resume native IDs; stopped requests expire, data survives
   assert.equal((await workspace.snapshot()).sessions[0].status, 'interrupted');
   await assert.rejects(workspace.respond({ id: session.id, requestId: 'old', allow: true }), /已停止/);
   await assert.rejects(workspace.send({ id: session.id, text: 'x', contextFile: '../outside' }), /目录内/);
+  await assert.rejects(workspace.send({ id: session.id, text: 'x', model: 'has space' }), /无效的模型/);
   await workspace.dispose();
   const restored = createClaudeWorkspace({ load: () => disk, save: () => {}, notify: () => {} });
   assert.equal((await restored.snapshot()).sessions[0].cliSessionId, 'native-id');
