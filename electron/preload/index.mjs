@@ -13,6 +13,7 @@ const api = {
   loadGroups: () => ipcRenderer.invoke('groups:load'),
   saveGroups: (data) => ipcRenderer.invoke('groups:save', data),
   claudeCheck: () => ipcRenderer.invoke('claude:check'),
+  claudeModels: (root) => ipcRenderer.invoke('claude:models', { root }),
   analyze: (p) => ipcRenderer.invoke('claude:analyze', p),
   cancelAnalyze: (sessionId) => ipcRenderer.invoke('claude:cancel', { sessionId }),
 

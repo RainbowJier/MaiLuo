@@ -7,10 +7,11 @@ const storageKey = 'mailuo.claude-session-drafts.v1';
 const modelKey = 'mailuo.claude-model.v1';
 export const CW = reactive({
   ready: false, loading: false, error: '', storageError: '', unavailable: false, model: '',
-  sessions: [], draftsById: record(), permissionsBySession: record(),
+  models: [], sessions: [], draftsById: record(), permissionsBySession: record(),
   operationsById: record(), bindingErrors: record()
 });
 let bridge, initialization, unsubscribe, epoch = 0, clock = 0, saveTimer;
+let modelsKey = '', modelsTask = null;
 const snapshots = new Map(), permissionClocks = new Map(), bindings = new Map(), draftVersions = new Map();
 const text = value => typeof value === 'string' ? value : '';
 const errorText = (error, fallback) => text(error?.message) || text(error) || fallback;
@@ -76,6 +77,22 @@ export function setClaudeModel(value) {
   CW.model = next;
   try { window.localStorage.setItem(modelKey, next); } catch {}
 }
+/** 可选模型来自本机 Claude Code 的 modelPicker.options，不内置任何默认模型。 */
+export function loadClaudeModels(root = '', force = false) {
+  if (typeof bridge?.claudeModels !== 'function') return Promise.resolve(CW.models);
+  const key = claudeRootKey(root);
+  if (!force && modelsTask && modelsKey === key) return modelsTask;
+  modelsKey = key;
+  modelsTask = (async () => {
+    try {
+      const result = await bridge.claudeModels(key || undefined);
+      if (Array.isArray(result?.models))
+        CW.models = result.models.filter(m => m && typeof m.model === 'string' && !/[\s"']/.test(m.model));
+    } catch { /* 清单读取失败不阻塞对话 */ }
+    return CW.models;
+  })();
+  return modelsTask;
+}
 export function initClaudeWorkspace() {
   if (initialization) return initialization;
   const currentEpoch = ++epoch;
@@ -119,6 +136,7 @@ export function initClaudeWorkspace() {
 export function disposeClaudeWorkspace() {
   ++epoch;
   unsubscribe?.(); unsubscribe = undefined; initialization = undefined; bridge = undefined;
+  modelsTask = null; modelsKey = '';
   CW.ready = false; CW.loading = false; CW.permissionsBySession = record();
   permissionClocks.clear();
   window.removeEventListener('beforeunload', disposeClaudeWorkspace);

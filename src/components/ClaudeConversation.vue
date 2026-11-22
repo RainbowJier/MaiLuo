@@ -51,16 +51,10 @@
       <div v-if="contextFile" class="cc-context">当前组件 · {{ contextFile }}</div>
       <textarea ref="inputEl" :value="draft" :disabled="!session || !CW.ready" rows="2" maxlength="100000" placeholder="在当前分析会话中向 Claude Code 提问…" @input="setDraft($event.target.value)" @keydown="keydown" @compositionstart="composing=true" @compositionend="composing=false" />
       <footer>
-        <input class="cc-model-input" list="cc-model-list" :value="CW.model" title="模型（下一轮生效，留空跟随 CLI 默认）" placeholder="默认模型" spellcheck="false" autocomplete="off"
-               @change="setModel($event.target.value)" @keydown.enter.stop.prevent="$event.target.blur()" />
+        <input class="cc-model-input" list="cc-model-list" :value="CW.model" title="模型（来自本机 Claude Code 配置，下一轮生效；留空跟随 CLI 默认）" placeholder="默认模型" spellcheck="false" autocomplete="off"
+               @focus="refreshModels" @change="setModel($event.target.value)" @keydown.enter.stop.prevent="$event.target.blur()" />
         <datalist id="cc-model-list">
-          <option value="claude-opus-5-5"></option>
-          <option value="claude-sonnet-5-5"></option>
-          <option value="claude-sonnet-5"></option>
-          <option value="claude-haiku-5-5"></option>
-          <option value="opus"></option>
-          <option value="sonnet"></option>
-          <option value="haiku"></option>
+          <option v-for="m in modelOptions" :key="m.model" :value="m.model" :label="m.label"></option>
         </datalist>
         <span>Enter 发送 · Shift + Enter 换行<span v-if="busy"> · 可继续编写草稿</span><span v-if="session?.model"> · 当前 {{ session.model }}</span></span>
         <button v-if="busy" type="button" class="cc-stop" :disabled="stopping" @click="stop">■ {{ stopping ? '正在停止…' : '停止' }}</button><button v-else type="submit" :disabled="!canSend">发送 ↑</button>
@@ -74,7 +68,7 @@
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { S, activeSession, displayPath, fileName as getFileName, showToast, startAnalysis } from '../store.js';
 import { CW, analyzeClaudeSession, claudeForAnalysis, claudePermissions, claudeStatus, ensureClaudeForAnalysis,
-  initClaudeWorkspace, isClaudeBusy, respondClaudePermission, retryClaudeWorkspace, sendClaudeMessage,
+  initClaudeWorkspace, isClaudeBusy, loadClaudeModels, respondClaudePermission, retryClaudeWorkspace, sendClaudeMessage,
   setClaudeDraft, setClaudeModel, stopClaudeSession } from '../claude-store.js';
 const scrollEl = ref(null), inputEl = ref(null);
 const bridgeReady = ref(false), followTail = ref(true), composing = ref(false), answerValues = ref({});
@@ -90,6 +84,12 @@ const stopping = computed(() => !!CW.operationsById[session.value?.id]?.stopping
 const operationError = computed(() => CW.operationsById[session.value?.id]?.error || '');
 const error = computed(() => CW.error || (analysis.value && CW.bindingErrors[analysis.value.claudeKey]) || '');
 const draft = computed(() => CW.draftsById[session.value?.id] || '');
+const modelOptions = computed(() => {
+  const list = CW.models.map(m => ({ ...m }));
+  const current = CW.model.trim();
+  if (current && !list.some(m => m.model === current)) list.unshift({ model: current, label: `${current} · 当前输入`, description: '' });
+  return list;
+});
 const contextFile = computed(() => analysis.value?.file || (S.selectedFile ? displayPath(S.selectedFile) : ''));
 const fileName = computed(() => getFileName(contextFile.value));
 const canSend = computed(() => bridgeReady.value && !!session.value && !!draft.value.trim() && !busy.value &&
@@ -119,6 +119,7 @@ async function prepare() {
   current.claudeKey ||= `analysis-${current.id}`;
   current.backend=S.config.backend;
   current.claudeError='';
+  void loadClaudeModels(project);
   const bound=await ensureClaudeForAnalysis(current);
   if (!bound && mounted) current.claudeError=CW.bindingErrors[current.claudeKey]||CW.error||'无法连接当前会话';
   else if (bound && mounted) {
@@ -132,6 +133,7 @@ watch(()=>[S.activeId,S.config.root,analysis.value?.file],()=>void prepare());
 watch(()=>[session.value?.revision,messages.value.length,permissions.value.length],async()=>{await nextTick();if(followTail.value&&scrollEl.value)scrollEl.value.scrollTop=scrollEl.value.scrollHeight;});
 function setDraft(value){if(session.value)setClaudeDraft(session.value.id,value);}
 function setModel(value){setClaudeModel(value);}
+function refreshModels(){void loadClaudeModels(root.value,true);}
 async function send(){if(!canSend.value)return;if(!session.value){await prepare();}if(!session.value)return;const id=session.value.id;const result=await sendClaudeMessage({id,text:draft.value,contextFile:contextFile.value});if(!result.ok&&result.error)showToast(result.error);}
 async function runAnalysis(){ await startAnalysis(); }
 async function suggestAnalysis(){ if(!contextFile.value)return; setDraft(`请解释当前组件 ${contextFile.value} 的功能和 API 调用流程。`); await nextTick();inputEl.value?.focus(); }

@@ -10,7 +10,7 @@
     "build": "node scripts/dev.mjs build",
     "preview": "node scripts/dev.mjs preview",
     "smoke": "node scripts/smoke.mjs",
-    "test:workspace": "node --test scripts/claude-workspace.test.mjs"
+    "test:workspace": "node --test scripts/claude-workspace.test.mjs scripts/claude-models.test.mjs"
   },
   "dependencies": {
     "echarts": "^5.5.1",

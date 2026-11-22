@@ -6,6 +6,7 @@ import { readJson, writeJson } from './persist.mjs';
 import { detectProjects, scanVueFiles } from './project.mjs';
 import { runClaudeAnalysis, buildPrompt } from './analyzer.mjs';
 import { createClaudeWorkspace } from './claude-workspace.mjs';
+import { loadClaudeModels } from './claude-models.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let win = null;
@@ -165,6 +166,13 @@ ipcMain.handle('layouts:save', async (_e, data) => { await writeJson('layouts.js
 
 ipcMain.handle('groups:load', async () => readJson('groups.json', {}));
 ipcMain.handle('groups:save', async (_e, data) => { await writeJson('groups.json', data); return true; });
+
+ipcMain.handle('claude:models', async (event, { root } = {}) => {
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
+    throw new Error('不受信任的模型清单请求');
+  const cwd = typeof root === 'string' && path.isAbsolute(root) ? root : process.cwd();
+  return { ok: true, ...loadClaudeModels({ cwd }) };
+});
 
 ipcMain.handle('claude:check', async () => {
   const { execFile } = await import('node:child_process');
