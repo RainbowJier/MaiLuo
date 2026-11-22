@@ -1,7 +1,6 @@
 <template>
   <div class="layout">
     <Sidebar />
-    <ComponentPanel />
     <DetailPanel />
     <AgentTerminal />
   </div>
@@ -12,7 +11,6 @@
 <script setup>
 import { onMounted } from 'vue';
 import Sidebar from './components/Sidebar.vue';
-import ComponentPanel from './components/ComponentPanel.vue';
 import DetailPanel from './components/DetailPanel.vue';
 import AgentTerminal from './components/AgentTerminal.vue';
 import ConfigModal from './components/ConfigModal.vue';

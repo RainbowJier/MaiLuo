@@ -53,24 +53,56 @@ h1, h2, h3, .serif { font-family: Georgia, 'Times New Roman', 'Songti SC', 'SimS
 .user-status { font-size: 11px; color: var(--green); }
 .user-status.bad { color: var(--red); }
 .user-status::before { content: "●"; font-size: 7px; margin-right: 4px; vertical-align: 1px; }
+.sidebar-divider { margin: 0 12px 8px; border-top: 1px dashed var(--border); }
+.workspace-switch { display: flex; gap: 4px; margin: 0 12px 12px; padding: 3px; background: var(--bg-hover); border-radius: 9px; }
+.workspace-switch button { flex: 1; padding: 7px 4px; border: none; border-radius: 6px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 11.5px; cursor: pointer; }
+.workspace-switch button.active { background: var(--bg-card); color: var(--accent-dark); box-shadow: 0 1px 4px #00000008; }
+.workspace-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 分组 */
+.groups-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 14px 6px; }
+.groups-title { font-size: 10.5px; color: var(--text-secondary); letter-spacing: 0.06em; text-transform: uppercase; }
+.g-btn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: none; background: transparent; border-radius: 6px; cursor: pointer; color: var(--text-secondary); flex-shrink: 0; padding: 0; }
+.g-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.g-btn.danger:hover { background: rgba(200, 60, 40, 0.12); color: var(--red); }
+.g-btn svg { width: 12px; height: 12px; }
+.group-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 8px; cursor: pointer; color: var(--text-primary); font-size: 12.5px; font-weight: 500; user-select: none; }
+.group-row:hover { background: var(--bg-hover); }
+.group-row.drop { outline: 1.5px dashed var(--accent); outline-offset: -2px; background: var(--accent-soft); }
+.g-chevron { display: inline-flex; width: 12px; height: 12px; color: var(--text-secondary); transition: transform 0.15s; flex-shrink: 0; }
+.g-chevron.open { transform: rotate(90deg); }
+.g-chevron svg { width: 12px; height: 12px; }
+.g-icon { width: 13px; height: 13px; color: var(--accent); flex-shrink: 0; }
+.g-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-actions { display: none; align-items: center; gap: 2px; }
+.group-row:hover .g-actions { display: inline-flex; }
+.g-rename { flex: 1; min-width: 0; background: var(--bg-card); border: 1px solid var(--accent); border-radius: 6px; padding: 3px 7px; font-size: 12px; color: var(--text-primary); }
+.g-rename:focus { outline: none; }
+.group-file { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 8px; cursor: pointer; color: var(--text-secondary); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.group-file:hover { background: var(--bg-hover); color: var(--text-primary); }
+.group-file.active { background: var(--accent-soft); color: var(--accent-dark); }
+.group-file svg { width: 13px; height: 13px; flex-shrink: 0; }
+.group-file span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.g-unlink { opacity: 0; }
+.group-file:hover .g-unlink { opacity: 1; }
+/* 组件选择弹窗 */
+.pick-modal { width: 400px; }
+.pick-search { position: relative; margin-bottom: 10px; }
+.pick-search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); width: 13px; height: 13px; color: var(--text-secondary); pointer-events: none; }
+.pick-search input { width: 100%; box-sizing: border-box; background: var(--bg-main); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 8px 31px; font-size: 12.5px; color: var(--text-primary); }
+.pick-search input:focus { outline: none; border-color: var(--accent); }
+.pick-list { max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+.pick-item { display: flex; align-items: center; gap: 9px; padding: 8px 12px; cursor: pointer; font-size: 12.5px; color: var(--text-primary); border-bottom: 1px solid var(--border); }
+.pick-item:last-child { border-bottom: none; }
+.pick-item:hover { background: var(--accent-soft); }
+.pick-check { width: 15px; height: 15px; border: 1.5px solid var(--border); border-radius: 4px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: transparent; transition: all 0.12s; }
+.pick-item.on .pick-check { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pick-check svg { width: 9px; height: 9px; }
+.pick-path { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick-empty { padding: 22px; font-size: 12px; color: var(--text-secondary); text-align: center; }
+.pick-count { margin-right: auto; font-size: 12px; color: var(--text-secondary); }
 
 /* ============ 中栏 ============ */
-.component-panel { width: 248px; border-right: 1px solid var(--border); background: var(--bg-main); display: flex; flex-direction: column; }
-.panel-header { padding: 18px 16px 10px; display: flex; align-items: center; justify-content: space-between; }
-.panel-header h2 { font-size: 14px; }
-.search-box { padding: 0 14px 10px; }
-.search-box input { width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px 7px 30px; font-size: 12.5px; color: var(--text-primary); transition: border 0.15s, box-shadow 0.15s; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 16 16' fill='none' stroke='%2383827D' stroke-width='1.6'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='M10.5 10.5L14 14'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 10px center; }
-.search-box input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.file-tree { flex: 1; overflow-y: auto; padding: 0 10px 12px; }
-.tree-folder { font-size: 11px; color: var(--text-secondary); padding: 10px 8px 4px; letter-spacing: 0.03em; display: flex; align-items: center; gap: 5px; }
-.tree-folder svg { width: 12px; height: 12px; }
-.tree-file { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; color: var(--text-primary); font-size: 12.5px; font-family: 'Cascadia Code', Consolas, monospace; transition: background 0.12s; }
-.tree-file:hover { background: var(--bg-hover); }
-.tree-file.active { background: var(--accent-soft); color: var(--accent-dark); font-weight: 500; }
-.tree-file svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--text-secondary); }
-.tree-file.active svg { color: var(--accent-dark); }
-.tree-file .api-count { margin-left: auto; font-size: 10px; color: var(--text-secondary); background: var(--bg-hover); border-radius: 10px; padding: 0 7px; font-family: -apple-system, sans-serif; }
-.tree-file.active .api-count { background: rgba(217,119,87,0.15); color: var(--accent-dark); }
 .empty-hint { padding: 24px 16px; font-size: 12px; color: var(--text-secondary); text-align: center; line-height: 1.7; }
 
 /* ============ 右栏 ============ */
@@ -201,23 +233,24 @@ h1, h2, h3, .serif { font-family: Georgia, 'Times New Roman', 'Songti SC', 'SimS
 .agent-terminal.closed { display: none; }
 .terminal-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; cursor: ew-resize; z-index: 30; }
 .terminal-resize:hover { background: rgba(217, 119, 87, 0.25); }
-.terminal-header { display: flex; align-items: center; gap: 12px; padding: 5px 12px; border-bottom: 1px solid var(--border); }
-.terminal-tabs { display: flex; gap: 4px; overflow-x: auto; min-width: 0; }
+.terminal-header { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 12px; border-bottom: 1px solid var(--border); }
+.terminal-tabs { display: flex; flex: 1; gap: 4px; overflow-x: auto; min-width: 0; }
 .terminal-tab { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; padding: 3px 12px; border-radius: 7px 7px 0 0; color: var(--text-secondary); border: 1px solid transparent; cursor: pointer; flex-shrink: 0; max-width: 150px; white-space: nowrap; overflow: hidden; transition: all 0.15s; }
 .terminal-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
 .terminal-tab.active { background: #fff; color: var(--accent-dark); border: 1px solid var(--border); border-bottom-color: #fff; }
 .terminal-tab .tab-run { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); animation: termPulse 1s infinite; flex-shrink: 0; }
-.terminal-status { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); }
+.terminal-status { margin-left: auto; display: flex; flex-shrink: 0; align-items: center; gap: 6px; white-space: nowrap; font-size: 11px; color: var(--text-secondary); }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #B3B0A6; }
 .status-dot.running { background: var(--amber); animation: termPulse 1s infinite; }
 .status-dot.parsing { background: var(--amber); animation: termPulse 1s infinite; }
 .status-dot.done { background: var(--green); }
 .status-dot.error { background: var(--red); }
 @keyframes termPulse { 50% { opacity: 0.3; } }
-.terminal-actions { display: flex; gap: 2px; }
+.terminal-actions { display: flex; flex-shrink: 0; gap: 2px; }
 .t-btn { width: 24px; height: 24px; border-radius: 6px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
 .t-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .terminal { background: var(--terminal-bg); flex: 1; min-height: 0; padding: 14px 18px; overflow-y: auto; font-family: 'Cascadia Code', Consolas, 'Courier New', monospace; font-size: 12px; line-height: 1.9; color: #E8E4D9; }
+.agent-terminal .cc-conversation { flex: 1; min-height: 0; height: auto; }
 .t-cmd { color: #D97757; }
 .t-ok { color: #8FB98A; }
 .t-info { color: #C9C5B8; }
@@ -248,7 +281,7 @@ h1, h2, h3, .serif { font-family: Georgia, 'Times New Roman', 'Songti SC', 'SimS
 .modal-note { font-size: 11.5px; color: var(--text-secondary); background: var(--bg-main); border: 1px dashed var(--border); border-radius: 8px; padding: 9px 12px; margin-bottom: 4px; display: flex; gap: 7px; align-items: flex-start; }
 .modal-note svg { width: 13px; height: 13px; flex-shrink: 0; margin-top: 2px; color: var(--amber); }
 .modal-footer { padding: 12px 26px 22px; display: flex; justify-content: flex-end; gap: 10px; align-items: center; }
-.detect-tip { font-size: 11px; color: var(--text-secondary); margin: -8px 0 12px; }
+.detect-tip { font-size: 11px; color: var(--text-secondary); margin: 6px 0 0; line-height: 1.5; }
 .detect-tip b { color: var(--accent-dark); font-weight: 500; }
 
 /* 全局 toast */

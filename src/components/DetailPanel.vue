@@ -51,6 +51,7 @@
           <p>{{ S.config.root ? '从左侧选择一个 Vue 组件开始分析' : '请先配置项目（点击左上角项目卡片）' }}</p>
         </template>
         <p v-if="sessionError" class="status-line" style="color:var(--red)">{{ sessionError }}</p>
+        <p v-if="activeSession()?.claudeError" class="status-line" style="color:var(--red)">{{ activeSession().claudeError }}</p>
       </div>
 
       <!-- 结果 -->
@@ -121,6 +122,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { S, stats, startAnalysis, cancelAnalysis, selectFn, currentFunctions, graphSubtitle, fileName, activeSession, showToast } from '../store.js';
+import { claudeForAnalysis } from '../claude-store.js';
 import ChainGraph from './ChainGraph.vue';
 import ChainCard from './ChainCard.vue';
 
@@ -138,7 +140,9 @@ const subtitlePath = computed(() => {
   return S.selectedFile ? (S.config.frontend ? S.config.frontend + '/' : '') + S.selectedFile
     : (S.config.root ? '从左侧选择一个 Vue 组件开始分析' : '未配置项目');
 });
-const canAnalyze = computed(() => !S.analyzing && !!S.selectedFile && !!S.config.root);
+const currentClaude = computed(() => activeSession() ? claudeForAnalysis(activeSession()) : null);
+const canAnalyze = computed(() => !S.analyzing && !!(S.selectedFile || activeSession()?.file) && !!S.config.root &&
+  (!activeSession()?.projectRoot || activeSession().projectRoot === S.config.root));
 const analyzeLabel = computed(() => S.analyzing ? '分析中…' : (hasResult.value ? '重新分析' : '开始分析'));
 const sessionError = computed(() => activeSession()?.status === 'error' ? '上次分析失败，可重试（详见终端）' : '');
 const visibleFunctions = computed(() =>

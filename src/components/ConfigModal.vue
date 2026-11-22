@@ -39,7 +39,7 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <circle cx="8" cy="8" r="6.2"/><path d="M8 7.5v3.5M8 5.2v.6"/>
           </svg>
-          <span>分析由本机 Claude Code 终端完成，仅授予只读工具（Read/Glob/Grep），不会修改项目任何文件{{ S.claudeOk ? '' : '；⚠ 未检测到 claude CLI，请先安装' }}</span>
+          <span>「开始分析」默认以最高权限直接执行、不逐项确认（仅提示保持只读）；对话中的命令或文件修改仍会先弹出授权卡片。使用本机 Claude Code 登录状态{{ S.claudeOk ? '' : '；⚠ 未检测到 claude CLI，请先安装' }}。</span>
         </div>
       </div>
       <div class="modal-footer">

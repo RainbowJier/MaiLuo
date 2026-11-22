@@ -10,16 +10,13 @@
             <path d="M3 4.5L6.5 8 3 11.5M8 12h5"/>
           </svg>
           {{ s.name }}
-          <span v-if="s.status === 'running' || s.status === 'parsing'" class="tab-run"></span>
+          <span v-if="['running','parsing','starting','permission'].includes(s.claudeStatus) || s.status === 'running' || s.status === 'parsing'" class="tab-run"></span>
         </div>
       </div>
       <div class="terminal-status">
         <span class="status-dot" :class="statusClass"></span>{{ statusText }}
       </div>
       <div class="terminal-actions">
-        <button class="t-btn" title="新会话" @click="startNewSession">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
-        </button>
         <button class="t-btn" title="展开 / 还原" @click="toggleMax">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 3h3v3M6 13H3v-3M13 3l-4.5 4.5M3 13l4.5-4.5"/></svg>
         </button>
@@ -28,38 +25,28 @@
         </button>
       </div>
     </div>
-    <div class="terminal" ref="termBody">
-      <template v-if="lines.length">
-        <div v-for="(l, i) in lines" :key="i" :class="'t-' + l.cls">{{ l.text }}</div>
-        <div v-if="isActiveRunning"><span class="cursor"></span></div>
-      </template>
-      <template v-else>
-        <div class="t-line t-dim">┌ Claude Code · 会话就绪</div>
-        <div class="t-line t-dim">└ 等待任务 · 点击「开始分析」后，此处实时显示 Claude Code 的终端输出</div>
-        <div class="t-cmd">$ <span class="cursor"></span></div>
-      </template>
-    </div>
+    <ClaudeConversation class="terminal-conversation" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue';
-import { S, activeSession, startNewSession, switchSession } from '../store.js';
+import { ref, computed } from 'vue';
+import { S, activeSession, switchSession } from '../store.js';
+import { CW } from '../claude-store.js';
+import ClaudeConversation from './ClaudeConversation.vue';
 
-const termBody = ref(null);
 const width = ref('420px');
 let prevW = '420px';
 
-const lines = computed(() => activeSession()?.term || []);
 const isActiveRunning = computed(() => ['running', 'parsing'].includes(activeSession()?.status));
-const statusMap = { idle: '空闲', running: '运行中', parsing: '解析中', done: '已完成', error: '失败' };
-const statusText = computed(() => statusMap[activeSession()?.status] || '空闲');
-const statusClass = computed(() => activeSession()?.status || '');
-
-watch(() => lines.value.length, async () => {
-  await nextTick();
-  if (termBody.value) termBody.value.scrollTop = termBody.value.scrollHeight;
+const statusMap = { idle: '空闲', starting: '准备中', running: '运行中', parsing: '解析中', permission: '待确认', done: '已完成', interrupted: '已停止', error: '失败' };
+const statusText = computed(() => {
+  const s = activeSession();
+  const st = s?.claudeStatus === 'running' && s.status === 'running' ? 'running' : s?.claudeStatus;
+  const status = CW.sessions.find(x => x.id === s?.claudeId)?.status || st;
+  return statusMap[status] || statusMap[s?.status] || '空闲';
 });
+const statusClass = computed(() => activeSession()?.claudeStatus === 'running' ? 'running' : activeSession()?.status || '');
 
 function toggleMax() {
   if (width.value === '55vw') width.value = prevW;

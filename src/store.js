@@ -1,5 +1,6 @@
 import { reactive, computed } from 'vue';
 import { seq } from './chain.js';
+import { CW, analyzeClaudeSession, claudeForAnalysis, ensureClaudeForAnalysis, initClaudeWorkspace, isClaudeBusy, stopClaudeSession } from './claude-store.js';
 
 const api = window.api;
 
@@ -23,6 +24,7 @@ export const S = reactive({
   terminalOpen: false,
   termHeight: '240px',
   layouts: {},              // "file|fn" -> {nodeName:{x,y}}
+  groups: {},               // projectRoot -> [{id,name,files:[rel],children:[Group]}]
   layoutDirty: false,
   layoutHasSaved: false,
   toast: ''
@@ -72,25 +74,42 @@ function pushTerm(s, line) {
 
 /* ---------------- 初始化 ---------------- */
 export async function initApp() {
-  const [cfg, ses, layouts, ck] = await Promise.all([
-    api.getConfig(), api.loadSessions(), api.loadLayouts(), api.claudeCheck()
+  const [cfg, ses, layouts, groups, ck] = await Promise.all([
+    api.getConfig(), api.loadSessions(), api.loadLayouts(), api.loadGroups(), api.claudeCheck()
   ]);
   S.claudeOk = !!ck.ok;
   S.claudeVersion = ck.version || '';
   S.config = { ...S.config, ...cfg };
   S.layouts = layouts || {};
+  S.groups = groups || {};
   if (ses?.sessions?.length) {
-    S.sessions = ses.sessions.map(s => ({ ...s, term: s.term || [] }));
+    S.sessions = ses.sessions.map(s => ({
+      ...s, term: s.term || [], projectRoot: s.projectRoot || S.config.root,
+      claudeKey: s.claudeKey || `analysis-${s.id}`,
+      ...(s.claudeId ? {} : { claudeId: null }),
+      claudeStatus: s.claudeStatus || 'idle', claudeError: s.claudeError || '',
+      claudeMessages: [], claudePermissions: []
+    }));
     S.sessionSeq = Math.max(0, ...S.sessions.map(s => s.id));
     S.activeId = ses.activeId ?? S.sessions[0].id;
     const a = activeSession();
     if (a?.file) S.selectedFile = toFrontendRel(a.file);
-  } else {
-    newSessionObj(true);
   }
   wireEvents();
   await refreshFiles();
   if (S.selectedFile && !S.files.find(f => f.rel === S.selectedFile)) S.selectedFile = null;
+  if (await initClaudeWorkspace()) {
+    for (const s of S.sessions) {
+      if (!s.projectRoot || !s.claudeKey) continue;
+      const bound = await ensureClaudeForAnalysis(s);
+      if (bound) {
+        s.claudeId = bound.id;
+        s.claudeMessages = bound.messages || [];
+        s.claudeStatus = bound.status || 'idle';
+        s.claudeModel = bound.model || '';
+      } else s.claudeError = CW.bindingErrors[s.claudeKey] || '';
+    }
+  }
   S.ready = true;
 }
 function toFrontendRel(rootRel) {
@@ -102,6 +121,39 @@ function wireEvents() {
   api.onTermLine(({ sessionId, line }) => {
     const s = S.sessions.find(x => x.id === sessionId);
     if (s) pushTerm(s, line);
+  });
+  api.onClaudeWorkspaceEvent(event => {
+    const s = S.sessions.find(item => item.claudeId === event?.sessionId);
+    if (!s) return;
+    if (event.kind === 'session' && event.session?.id === s.claudeId) {
+      const chat = event.session;
+      s.claudeMessages = chat.messages || [];
+      s.claudeStatus = chat.status || 'idle';
+      s.claudeError = chat.error || '';
+      s.claudeModel = chat.model || '';
+      s.claudeRevision = chat.revision || 0;
+      if (chat.analysis?.status === 'done' && chat.analysis.sessionId === s.id && chat.analysis.data) {
+        s.data = chat.analysis.data;
+        s.analyzed = true;
+        s.status = 'done';
+        S.fileApiCount[toFrontendRel(s.file)] = chat.analysis.data.functions.length;
+      } else if (chat.analysis?.status === 'error') {
+        s.status = 'error';
+        s.claudeError = chat.analysis.error || s.claudeError;
+      } else if (chat.analysis?.status === 'interrupted') {
+        s.status = 'idle';
+      }
+      s.claudePermissions = Object.values(CW.permissionsBySession[s.claudeId] || {});
+      if (chat.analysis?.status === 'running') s.status = 'running';
+      else if (chat.status === 'running' || chat.status === 'starting' || chat.status === 'permission') s.status = 'idle';
+      else if (chat.analysis?.status === 'done') S.analyzing = false;
+      S.analyzing = !!(activeSession()?.claudeStatus === 'running' && activeSession()?.status === 'running');
+      persistSessions();
+    } else if (event.kind === 'permission') {
+      s.claudePermissions = Object.values(CW.permissionsBySession[s.claudeId] || {});
+    } else if (event.kind === 'permission-resolved') {
+      s.claudePermissions = Object.values(CW.permissionsBySession[s.claudeId] || {});
+    }
   });
   api.onTermStatus(({ sessionId, status }) => {
     const s = S.sessions.find(x => x.id === sessionId);
@@ -139,9 +191,10 @@ export function persistSessions() {
   persistT = setTimeout(() => {
     const sessions = S.sessions.map(s => ({
       id: s.id, name: s.name, file: s.file, analyzed: s.analyzed,
-      status: s.analyzed ? 'done' : 'idle',
-      term: (s.term || []).slice(-200),
-      data: s.analyzed ? s.data : null
+      projectRoot: s.projectRoot || S.config.root, claudeKey: s.claudeKey || `analysis-${s.id}`,
+      claudeId: s.claudeId || null, backend: s.backend || '',
+      claudeStatus: s.claudeStatus || 'idle', claudeError: s.claudeError || '',
+      status: s.analyzed ? 'done' : 'idle', term: (s.term || []).slice(-200), data: s.analyzed ? s.data : null
     }));
     api.saveSessions(plain({ sessions, activeId: S.activeId })).catch(() => {});
   }, 400);
@@ -164,12 +217,15 @@ export async function saveConfigFlow(cfg) {
   showToast('配置已保存');
 }
 
-/* ---------------- 组件选择 ---------------- */
+/* ---------------- 组件选择：一个组件一个会话 ---------------- */
 export function selectFile(rel) {
   if (S.analyzing) return;
+  const display = displayPath(rel);
+  let s = S.sessions.find(x => x.file === display && (x.projectRoot || S.config.root) === S.config.root);
+  if (!s) s = createComponentSession(rel);
   S.selectedFile = rel;
-  const s = activeSession();
-  if (s && !s.analyzed) { s.file = displayPath(rel); }
+  S.terminalOpen = true;
+  if (S.activeId !== s.id) { S.activeId = s.id; S.currentFn = 'all'; persistSessions(); }
 }
 
 /* ---------------- 分析 ---------------- */
@@ -177,54 +233,153 @@ export async function startAnalysis() {
   const s = activeSession();
   if (!s || S.analyzing) return;
   if (!S.config.root) { S.configOpen = true; return; }
-  if (!S.selectedFile) { showToast('请先从左侧选择一个 Vue 组件'); return; }
+  const selected = S.selectedFile || (s.file ? toFrontendRel(s.file) : null);
+  if (!selected) { showToast('请先从左侧选择一个 Vue 组件'); return; }
+  // 一组件一会话：当前会话与所选组件不符时，切到（或新建）该组件的会话
+  if (!s.file || s.file !== displayPath(selected)) {
+    selectFile(selected);
+    s = activeSession();
+    if (!s) return;
+  }
+  if (s.projectRoot && s.projectRoot !== S.config.root) {
+    showToast('当前会话属于另一个项目，请切换回原项目');
+    return;
+  }
+  s.backend = S.config.backend;
+  S.selectedFile = selected;
+  s.analyzed = false; s.data = null; s.status = 'running'; s.claudeStatus = 'starting'; s.claudeError = '';
   S.analyzing = true;
-  s.analyzed = false; s.data = null; s.status = 'running'; s.term = [];
-  s.file = displayPath(S.selectedFile);
   S.terminalOpen = true;
-  pushTerm(s, `$ claude analyze --project ${S.config.root} --entry ${s.file}`);
-  const r = await api.analyze({
-    sessionId: s.id,
-    root: S.config.root,
-    backendRel: S.config.backend,
-    entryRel: s.file
-  });
-  if (!r.ok) {
+  persistSessions();
+  const result = await analyzeClaudeSession(s);
+  if (!result.ok) {
     S.analyzing = false;
-    s.status = 'error';
-    pushTerm(s, `✗ ${r.error}`);
+    s.status = 'error'; s.claudeStatus = 'error'; s.claudeError = result.error || '无法开始分析';
+    pushTerm(s, `✗ ${s.claudeError}`);
+    persistSessions();
+    showToast(s.claudeError);
   }
 }
 export function cancelAnalysis() {
   const s = activeSession();
-  if (s && S.analyzing) api.cancelAnalyze(s.id);
+  if (s?.claudeId && S.analyzing) void stopClaudeSession(s.claudeId);
 }
 
-/* ---------------- 会话 ---------------- */
-function newSessionObj(first = false) {
+/* ---------------- 会话：按组件创建，一组件一会话 ---------------- */
+function componentSessionKey(rel) {
+  const r = String(rel).replace(/\\/g, '/');
+  if (`vue:${r}`.length <= 100) return `vue:${r}`;
+  let h = 0;
+  for (let i = 0; i < r.length; i++) h = (h * 31 + r.charCodeAt(i)) >>> 0;
+  return `vue:h${h.toString(36)}`;
+}
+function createComponentSession(rel) {
   S.sessionSeq += 1;
-  const s = { id: S.sessionSeq, name: `会话 ${S.sessionSeq}`, file: '', analyzed: false, status: 'idle', term: [], data: null };
+  const s = { id: S.sessionSeq, name: fileName(rel), file: displayPath(rel), projectRoot: S.config.root,
+    claudeKey: componentSessionKey(rel), claudeId: null, claudeStatus: 'idle', claudeError: '',
+    analyzed: false, status: 'idle', term: [], data: null };
   S.sessions.push(s);
-  S.activeId = s.id;
-  if (!first) persistSessions();
+  if (S.config.root) ensureClaudeForAnalysis(s).then(chat => {
+    if (!chat) { s.claudeError = CW.bindingErrors[s.claudeKey] || '无法连接当前会话'; return; }
+    s.claudeId = chat.id; s.claudeMessages = chat.messages || []; s.claudeStatus = chat.status || 'idle';
+    persistSessions();
+  });
   return s;
 }
-export function startNewSession() {
-  if (S.analyzing) return;
-  newSessionObj();
-  S.selectedFile = null;
-  S.terminalOpen = true;
-  showToast('已新建会话');
-}
 export function switchSession(id) {
-  if (S.analyzing || id === S.activeId) return;
+  if (id === S.activeId) return;
   const s = S.sessions.find(x => x.id === id);
   if (!s) return;
   S.activeId = id;
   S.currentFn = 'all';
+  S.analyzing = s.claudeStatus === 'running' && !s.analyzed;
+  S.config.backend = s.backend || S.config.backend;
   S.selectedFile = s.analyzed || s.file ? toFrontendRel(s.file || '') : null;
   if (S.selectedFile && !S.files.find(f => f.rel === S.selectedFile)) S.selectedFile = null;
   persistSessions();
+}
+
+/* ---------------- 组件分组 ---------------- */
+let groupsT = null;
+function persistGroups() {
+  clearTimeout(groupsT);
+  groupsT = setTimeout(() => api.saveGroups(plain(S.groups)).catch(() => {}), 400);
+}
+function groupsList() {
+  if (!S.config.root) return null;
+  if (!Array.isArray(S.groups[S.config.root])) S.groups[S.config.root] = [];
+  return S.groups[S.config.root];
+}
+export function groupsForRoot() {
+  return S.config.root && Array.isArray(S.groups[S.config.root]) ? S.groups[S.config.root] : [];
+}
+function findGroupNode(list, id) {
+  for (const g of list) {
+    if (g.id === id) return g;
+    const hit = findGroupNode(g.children || [], id);
+    if (hit) return hit;
+  }
+  return null;
+}
+function ensureNode(g) {
+  if (!Array.isArray(g.files)) g.files = [];
+  if (!Array.isArray(g.children)) g.children = [];
+  return g;
+}
+export function addGroup(parentId = null, name = '新建分组') {
+  const list = groupsList();
+  if (!list) return null;
+  const node = ensureNode({
+    id: `g${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name, files: [], children: []
+  });
+  const parent = parentId ? findGroupNode(list, parentId) : null;
+  (parent ? ensureNode(parent).children : list).push(node);
+  persistGroups();
+  return node.id;
+}
+export function renameGroup(id, name) {
+  const g = findGroupNode(groupsList() || [], id);
+  const trimmed = String(name || '').trim();
+  if (!g || !trimmed) return;
+  g.name = trimmed;
+  persistGroups();
+}
+export function deleteGroup(id) {
+  const list = groupsList();
+  if (!list) return;
+  const i = list.findIndex(g => g.id === id);
+  if (i >= 0) { list.splice(i, 1); persistGroups(); return; }
+  const walk = (nodes) => {
+    for (const g of nodes) {
+      const j = (g.children || []).findIndex(c => c.id === id);
+      if (j >= 0) { g.children.splice(j, 1); return true; }
+      if (walk(g.children || [])) return true;
+    }
+    return false;
+  };
+  if (walk(list)) persistGroups();
+}
+export function addFileToGroup(id, rel) {
+  const g = findGroupNode(groupsList() || [], id);
+  if (!g) return;
+  ensureNode(g);
+  if (!g.files.includes(rel)) g.files.push(rel);
+  persistGroups();
+}
+export function removeFileFromGroup(id, rel) {
+  const g = findGroupNode(groupsList() || [], id);
+  if (!g) return;
+  g.files = (g.files || []).filter(r => r !== rel);
+  persistGroups();
+}
+/** 弹窗确认：整体重设分组内组件（勾选集合） */
+export function setGroupFiles(id, rels) {
+  const g = findGroupNode(groupsList() || [], id);
+  if (!g) return;
+  ensureNode(g);
+  g.files = [...rels];
+  persistGroups();
 }
 
 /* ---------------- 布局 ---------------- */

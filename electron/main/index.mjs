@@ -5,6 +5,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, watc
 import { readJson, writeJson } from './persist.mjs';
 import { detectProjects, scanVueFiles } from './project.mjs';
 import { runClaudeAnalysis, buildPrompt } from './analyzer.mjs';
+import { createClaudeWorkspace } from './claude-workspace.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let win = null;
@@ -112,6 +113,34 @@ function createWindow() {
   setupDevEvalHarness();
 }
 
+/* 每个组件分析会话绑定一条 Claude Code 原生历史。 */
+const claudeWorkspace = createClaudeWorkspace({
+  load: () => readJson('claude-workspace.json', { version: 1, sessions: [], activeByRoot: {} }),
+  save: (data) => writeJson('claude-workspace.json', data),
+  notify: (event) => {
+    if (win && !win.isDestroyed() && !win.webContents.isDestroyed())
+      win.webContents.send('claude-workspace:event', event);
+  }
+});
+for (const [action, method] of Object.entries({
+  load: 'snapshot', create: 'create', send: 'send', analyze: 'analyze', stop: 'stop', respond: 'respond'
+})) {
+  ipcMain.handle(`claude-workspace:${action}`, async (event, data) => {
+    if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
+      throw new Error('不受信任的工作区请求');
+    try { return await claudeWorkspace[method](data); }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
+}
+let workspaceClosing = false;
+app.on('before-quit', (event) => {
+  if (workspaceClosing) return;
+  event.preventDefault();
+  workspaceClosing = true;
+  for (const ctrl of running.values()) ctrl.cancel();
+  claudeWorkspace.dispose().catch(e => debugLog(`workspace shutdown: ${e.message}`)).finally(() => app.quit());
+});
+
 /* ---------------- IPC ---------------- */
 
 ipcMain.handle('dialog:selectFolder', async () => {
@@ -133,6 +162,9 @@ ipcMain.handle('sessions:save', async (_e, data) => { await writeJson('sessions.
 
 ipcMain.handle('layouts:load', async () => readJson('layouts.json', {}));
 ipcMain.handle('layouts:save', async (_e, data) => { await writeJson('layouts.json', data); return true; });
+
+ipcMain.handle('groups:load', async () => readJson('groups.json', {}));
+ipcMain.handle('groups:save', async (_e, data) => { await writeJson('groups.json', data); return true; });
 
 ipcMain.handle('claude:check', async () => {
   const { execFile } = await import('node:child_process');
