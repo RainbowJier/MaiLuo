@@ -84,7 +84,9 @@ onMounted(() => {
     theme: {
       background: '#26251f', foreground: '#e8e4d9', cursor: '#d97757', cursorAccent: '#26251f',
       selectionBackground: '#d9775766', black: '#26251f', red: '#c96a5a', green: '#7d9b76',
-      yellow: '#d9bd83', blue: '#7f93b3', magenta: '#b08bb3', cyan: '#6fa3a8', white: '#e8e4d9'
+      yellow: '#d9bd83', blue: '#7f93b3', magenta: '#b08bb3', cyan: '#6fa3a8', white: '#e8e4d9',
+      scrollbarSliderBackground: '#4a463daa', scrollbarSliderHoverBackground: '#57534acc',
+      scrollbarSliderActiveBackground: '#615c50dd'
     }
   });
   fit = new FitAddon();
@@ -120,7 +122,7 @@ onBeforeUnmount(() => {
 .ct-host { flex: 1; min-width: 0; min-height: 0; }
 /* xterm.css 给视口硬编码了纯黑底色；主题内联色未生效时四周就会露黑边，这里按终端主题钉死 */
 .ct-wrap :deep(.xterm) { padding: 0; background: #26251f; }
-.ct-wrap :deep(.xterm-viewport) { background-color: #26251f !important; }
+.ct-wrap :deep(.xterm-viewport) { background-color: #26251f !important; scrollbar-color: #4a463daa transparent; }
 .ct-banner { position: absolute; inset: auto 10px 10px 10px; padding: 8px 10px; color: #f29d84; background: #3a2a24; border: 1px solid #6b4a3f; border-radius: 7px; font-size: 12px; }
 .ct-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; background: rgba(38, 37, 31, 0.82); color: #aaa69b; font-size: 12px; }
 .ct-overlay button { padding: 6px 14px; border: 1px solid #777064; border-radius: 6px; background: #393630; color: #eee; cursor: pointer; }
