@@ -103,6 +103,19 @@ h1, h2, h3, .serif { font-family: Georgia, 'Times New Roman', 'Songti SC', 'SimS
 .pick-path { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pick-empty { padding: 22px; font-size: 12px; color: var(--text-secondary); text-align: center; }
 .pick-count { margin-right: auto; font-size: 12px; color: var(--text-secondary); }
+/* 树结构展示 */
+.pick-tree { display: flex; flex-direction: column; gap: 0; }
+.pick-tree-node { }
+.pick-tree-dir { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font-size: 12.5px; color: var(--text-primary); font-weight: 500; }
+.pick-tree-dir:hover { background: var(--accent-soft); }
+.pick-tree-chevron { display: inline-flex; width: 12px; height: 12px; color: var(--text-secondary); transition: transform 0.15s; flex-shrink: 0; }
+.pick-tree-chevron.open { transform: rotate(90deg); }
+.pick-tree-chevron svg { width: 12px; height: 12px; }
+.pick-tree-icon { width: 13px; height: 13px; color: var(--accent); flex-shrink: 0; }
+.pick-tree-file { display: flex; align-items: center; gap: 9px; padding: 7px 12px; cursor: pointer; font-size: 12.5px; color: var(--text-primary); }
+.pick-tree-file:hover { background: var(--accent-soft); }
+.pick-tree-file.on .pick-check { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pick-tree-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ============ 中栏 ============ */
 .empty-hint { padding: 24px 16px; font-size: 12px; color: var(--text-secondary); text-align: center; line-height: 1.7; }

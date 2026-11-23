@@ -69,7 +69,7 @@
                :title="row.rel"
                @click="selectFile(row.rel)">
             <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 1.5A.5.5 0 0 1 3.5 1h4l1.5 1.5H13a.5.5 0 0 1 .5.5v11a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5v-12z"/></svg>
-            <span>{{ fileName(row.rel) }}</span>
+            <span>{{ row.rel }}</span>
             <i v-if="sessionByRel[row.rel]" class="session-dot" :class="{ done: sessionByRel[row.rel].analyzed }"
                :title="sessionByRel[row.rel].analyzed ? '该菜单已有分析结果' : '该菜单已建立独立会话'"></i>
             <button class="g-btn g-unlink" title="移出分组" @click.stop="unlink(row.g, row.rel)">
@@ -97,15 +97,26 @@
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
             <input v-model="pickKw" type="text" placeholder="搜索组件…" />
           </div>
-          <div class="pick-list">
-            <div v-for="f in pickFiles" :key="f.rel" class="pick-item"
-                 :class="{ on: pickSel.has(f.rel) }" :title="f.rel" @click="togglePick(f.rel)">
-              <span class="pick-check">
-                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg>
-              </span>
-              <span class="pick-path">{{ f.name }}</span>
-            </div>
-            <div v-if="!pickFiles.length" class="pick-empty">无匹配组件</div>
+          <div class="pick-list pick-tree">
+            <template v-for="node in pickTree" :key="node.id">
+              <div class="pick-tree-node" :style="{ paddingLeft: node.depth * 16 + 'px' }">
+                <div v-if="node.type === 'dir'" class="pick-tree-dir" @click="togglePickDir(node.id)">
+                  <span class="pick-tree-chevron" :class="{ open: pickExpandedDirs.has(node.id) }">
+                    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 2.5L8 6l-4 3.5"/></svg>
+                  </span>
+                  <svg class="pick-tree-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 1.5h2.5l1 1.5h3.5v7h-7v-8.5z"/></svg>
+                  <span class="pick-tree-name">{{ node.name }}</span>
+                </div>
+                <div v-else class="pick-tree-file" :class="{ on: pickSel.has(node.rel) }" @click="togglePick(node.rel)">
+                  <span class="pick-check">
+                    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg>
+                  </span>
+                  <svg viewBox="0 0 16 16" fill="currentColor" style="width:14px;height:14px"><path d="M3 1.5A.5.5 0 0 1 3.5 1h4l1.5 1.5H13a.5.5 0 0 1 .5.5v11a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5v-12z"/></svg>
+                  <span class="pick-tree-name" :title="node.rel">{{ node.name }}</span>
+                </div>
+              </div>
+            </template>
+            <div v-if="!pickTree.length" class="pick-empty">无匹配组件</div>
           </div>
         </div>
         <div class="modal-footer">
@@ -158,6 +169,7 @@ const renameText = ref('');
 const pickerFor = ref(null);
 const pickKw = ref('');
 const pickSel = reactive(new Set());
+const pickExpandedDirs = reactive(new Set());
 
 const rows = computed(() => {
   const out = [];
@@ -192,14 +204,98 @@ const pickFiles = computed(() => {
   const kw = pickKw.value.trim().toLowerCase();
   return S.files.filter(f => !kw || f.rel.toLowerCase().includes(kw));
 });
+const pickTree = computed(() => {
+  const tree = [];
+  const nodes = new Map(); // id -> { type, name, rel, depth, children }
+  const kw = pickKw.value.trim().toLowerCase();
+
+  for (const f of S.files) {
+    if (kw && !f.rel.toLowerCase().includes(kw)) continue;
+
+    const parts = f.rel.split('/');
+    let currentPath = '';
+
+    // 创建目录节点
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      currentPath += (currentPath ? '/' : '') + part;
+
+      if (!nodes.has(currentPath)) {
+        nodes.set(currentPath, {
+          id: 'dir|' + currentPath,
+          type: 'dir',
+          name: part,
+          path: currentPath,
+          depth: i,
+          children: []
+        });
+      }
+    }
+
+    // 创建文件节点
+    nodes.set(f.rel, {
+      id: 'file|' + f.rel,
+      type: 'file',
+      name: parts[parts.length - 1],
+      rel: f.rel,
+      depth: parts.length - 1
+    });
+  }
+
+  // 构建树结构
+  const buildTree = () => {
+    const root = [];
+    for (const node of nodes.values()) {
+      if (node.type === 'dir') {
+        const parentPath = node.path.substring(0, node.path.lastIndexOf('/'));
+        if (parentPath) {
+          const parent = nodes.get(parentPath);
+          if (parent) {
+            if (!parent.children) parent.children = [];
+            parent.children.push(node);
+          }
+        } else {
+          root.push(node);
+        }
+      } else {
+        const parentPath = node.rel.substring(0, node.rel.lastIndexOf('/'));
+        const parent = nodes.get(parentPath);
+        if (parent) {
+          if (!parent.children) parent.children = [];
+          parent.children.push(node);
+        } else {
+          root.push(node);
+        }
+      }
+    }
+    return root;
+  };
+
+  const flatten = (nodes) => {
+    const result = [];
+    for (const node of nodes) {
+      result.push(node);
+      if (node.type === 'dir' && pickExpandedDirs.has(node.id)) {
+        result.push(...flatten(node.children || []));
+      }
+    }
+    return result;
+  };
+
+  return flatten(buildTree());
+});
 
 function openPicker(g) {
   pickerFor.value = g.id;
   pickKw.value = '';
   pickSel.clear();
+  pickExpandedDirs.clear();
   for (const rel of g.files || []) { if (fileByRel.value[rel]) pickSel.add(rel); }
 }
 function closePicker() { pickerFor.value = null; }
+function togglePickDir(id) {
+  pickExpandedDirs.has(id) ? pickExpandedDirs.delete(id) : pickExpandedDirs.add(id);
+}
 function togglePick(rel) {
   pickSel.has(rel) ? pickSel.delete(rel) : pickSel.add(rel);
 }
