@@ -199,10 +199,7 @@ h1, h2, h3, .serif { font-family: Georgia, 'Times New Roman', 'Songti SC', 'SimS
 .bar-node:hover { transform: scale(1.15); }
 .bar-node.vue { background: #fff; color: var(--accent-dark); border: 2px solid var(--accent); }
 .bar-node.api { background: #C99B7A; }
-.bar-node.http.get { background: var(--green); }
-.bar-node.http.post { background: var(--accent); }
-.bar-node.http.put { background: var(--amber); }
-.bar-node.http.delete { background: var(--red); }
+.bar-node.http { background: var(--green); }
 .bar-node.check { background: var(--amber); }
 .bar-node.logic { background: var(--accent); }
 .bar-node.data { background: var(--blue); }
