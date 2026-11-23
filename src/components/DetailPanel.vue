@@ -87,7 +87,7 @@
           <div class="graph-legend">
             <span class="legend-item"><span class="legend-dot" style="background:#fff;border:2px solid #D97757"></span>Vue 事件</span>
             <span class="legend-item"><span class="legend-dot" style="background:#C99B7A"></span>API 封装</span>
-            <span class="legend-item"><span class="legend-dot" style="background:#5F7D58"></span>HTTP（按方法着色）</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#5F7D58"></span>HTTP 请求</span>
             <span class="legend-item"><span class="legend-dot" style="background:#B08034"></span>参数校验</span>
             <span class="legend-item"><span class="legend-dot" style="background:#D97757"></span>业务逻辑</span>
             <span class="legend-item"><span class="legend-dot" style="background:#5A6E8C"></span>数据读写</span>

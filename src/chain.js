@@ -9,7 +9,8 @@ export const NODE_STYLE = {
   data: { bg: '#5A6E8C' },
   err:  { bg: '#B54A35', label: '#B54A35' },
 };
-export const METHOD_COLOR = { get: '#5F7D58', post: '#D97757', put: '#B08034', delete: '#B54A35' };
+/** HTTP 节点统一使用 GET 的绿色（不再按方法着色） */
+export const METHOD_COLOR = { get: '#5F7D58', post: '#5F7D58', put: '#5F7D58', delete: '#5F7D58' };
 export const BAR_LETTER = { vue: 'V', api: 'A', http: 'M' };
 export const BAR_TITLE = { vue: 'Vue 事件函数', api: 'API 封装', http: 'HTTP 请求', check: '参数校验', logic: '业务逻辑', data: '数据读写' };
 
