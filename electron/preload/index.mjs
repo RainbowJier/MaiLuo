@@ -24,7 +24,13 @@ const api = {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on('terminal:event', listener);
     return () => ipcRenderer.removeListener('terminal:event', listener);
-  }
+  },
+
+  /* 窗口控制 */
+  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
+  windowMaximize: () => ipcRenderer.invoke('window:maximize'),
+  windowClose: () => ipcRenderer.invoke('window:close'),
+  windowIsMaximized: () => ipcRenderer.invoke('window:isMaximized')
 };
 
 contextBridge.exposeInMainWorld('api', api);

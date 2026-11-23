@@ -82,6 +82,12 @@ function createWindow() {
     height,
     minWidth: 980,
     minHeight: 640,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#FAF9F5',
+      symbolColor: '#1F1E1D',
+      height: 32
+    },
     backgroundColor: '#FAF9F5',
     title: 'MaiLuo',
     webPreferences: {
@@ -172,6 +178,12 @@ ipcMain.handle('claude:check', async () => {
     });
   });
 });
+
+/* 窗口控制 */
+ipcMain.handle('window:minimize', () => { if (win && !win.isDestroyed()) win.minimize(); return true; });
+ipcMain.handle('window:maximize', () => { if (win && !win.isDestroyed()) win.isMaximized() ? win.unmaximize() : win.maximize(); return true; });
+ipcMain.handle('window:close', () => { if (win && !win.isDestroyed()) win.close(); return true; });
+ipcMain.handle('window:isMaximized', () => win && !win.isDestroyed() ? win.isMaximized() : false);
 
 app.whenReady().then(() => {
   createWindow();
