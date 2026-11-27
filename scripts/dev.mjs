@@ -14,9 +14,12 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripClaudeSessionMarkers } from '../electron/main/child-env.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const env = { ...process.env };
+// 同理剥离「另一个 Claude Code 会话」的标记（在 IDE 内启动 dev 时会带），
+// 避免 app 内 spawn 的 claude 继承后关闭 transcript 落盘，分析无法收口。清单与 PTY 宿主共用。
+const env = stripClaudeSessionMarkers(process.env);
 delete env.ELECTRON_RUN_AS_NODE;
 
 const cli = path.join(root, 'node_modules', 'electron-vite', 'bin', 'electron-vite.js');

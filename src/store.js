@@ -20,6 +20,7 @@ export const S = reactive({
   activeId: null,
   sessionSeq: 0,
   analyzing: false,
+  dataRev: 0,                // 每次分析成功 +1：驱动链路图重建（重新分析后功能数量可能没变，key 仍需变化）
   currentFn: 'all',
   terminalOpen: false,
   terminal: { alive: false, error: '' },   // 原生 Claude Code 终端（PTY）状态
@@ -99,29 +100,35 @@ function toFrontendRel(rootRel) {
 function wireEvents() {
   // 原生终端事件：data/exit 由终端组件消费，这里只处理分析结果回填。
   api.onTerminalEvent(event => {
-    if (event?.type !== 'analysis') return;
-    const s = activeSession();
-    S.analyzing = false;
+    if (!event) return;
+    if (event.type === 'hint') { showToast(event.text, 9000); return; }
+    if (event.type !== 'analysis') return;
+    // 结果与失败一律回到「发起分析的会话」。事件到达时用户可能已经切到别的菜单，
+    // 若按当前激活会话回填，会把新菜单标成失败，而真正在分析的那个永远停在「分析中」。
+    const s = S.sessions.find(x => x.claudeId && x.claudeId === event.sessionId) || activeSession();
+    const active = !!s && s.id === S.activeId;
+    if (active) S.analyzing = false;
     if (!s) return;
     if (event.ok && event.data) {
       s.data = event.data; s.analyzed = true; s.status = 'done'; s.claudeError = '';
-      S.currentFn = 'all';
+      S.dataRev += 1;
       if (s.file) S.fileApiCount[toFrontendRel(s.file)] = event.data.functions.length;
-      showToast(`✓ 分析完成：${event.data.functions.length} 个功能`);
+      if (active) { S.currentFn = 'all'; showToast(`✓ 分析完成：${event.data.functions.length} 个功能`); }
     } else {
       s.status = 'error';
       s.claudeError = event.error || '分析失败';
-      showToast('分析失败，详见终端面板');
+      if (active) showToast(`分析失败：${s.claudeError}`, 6000);
+      else showToast(`「${s.name}」的分析已中止`, 5000);
     }
     persistSessions();
   });
 }
 
 let toastT = null;
-export function showToast(msg) {
+export function showToast(msg, ms = 2600) {
   S.toast = msg;
   clearTimeout(toastT);
-  toastT = setTimeout(() => S.toast = '', 2600);
+  toastT = setTimeout(() => S.toast = '', ms);
 }
 
 let persistT = null;
@@ -183,11 +190,16 @@ function ensureSessionUuid(s) {
 }
 async function waitForTerminal(timeout = 15000) {
   for (let i = 0; i < timeout / 100; i++) {
-    if (S.terminal.alive) return true;
+    if (S.terminal.alive) break;
     if (S.terminal.error) return false;
     await new Promise(r => setTimeout(r, 100));
   }
-  return false;
+  if (!S.terminal.alive) return false;
+  // 刚切到某个菜单时 alive 可能还是上一个终端留下的，所以由终端组件在切换时先清掉，
+  // 这里等到的是「这个会话的终端有了首次输出」。首帧输出时 TUI 未必已进入 raw 模式，
+  // 再稍等片刻才注入，避免整段粘贴被当成普通按键逐行提交。
+  await new Promise(r => setTimeout(r, 300));
+  return true;
 }
 export async function startAnalysis() {
   const current = activeSession();
@@ -202,43 +214,44 @@ export async function startAnalysis() {
     s = activeSession();
     if (!s) return;
   }
-  if (s.status === 'running') { showToast('当前组件正在分析，可先切到其他菜单'); return; }
+  if (s.status === 'running') { showToast('当前组件正在分析中；切换菜单会中止本次分析'); return; }
   if (s.projectRoot && s.projectRoot !== S.config.root) {
     showToast('当前会话属于另一个项目，请切换回原项目');
     return;
   }
   s.backend = S.config.backend;
   S.selectedFile = selected;
-  s.analyzed = false; s.data = null; s.status = 'running'; s.claudeError = '';
+  // 重新分析时保留上一次的结果：新结果解析成功才替换，失败不会把已有的链路图清掉
+  s.status = 'running'; s.claudeError = '';
   S.analyzing = true;
   S.terminalOpen = true;
   ensureSessionUuid(s);
   persistSessions();
-  if (!await waitForTerminal()) {
-    S.analyzing = false;
-    s.status = 'error';
-    s.claudeError = S.terminal.error || '原生 Claude Code 终端未能启动';
+  // 启动阶段的失败只算在发起分析的这个会话头上；用户若已切走，界面状态由 selectFile 负责
+  const fail = (message) => {
+    s.status = 'error'; s.claudeError = message;
+    if (S.activeId === s.id) { S.analyzing = false; showToast(message, 6000); }
     persistSessions();
-    showToast(s.claudeError);
+  };
+  if (!await waitForTerminal()) { fail(S.terminal.error || '原生 Claude Code 终端未能启动'); return; }
+  if (S.activeId !== s.id) {
+    // 等终端就绪期间切走了菜单：指令还没发出，不算「正在分析」
+    s.status = s.analyzed ? 'done' : 'idle';
+    persistSessions();
     return;
   }
-  const result = await api.terminalAnalyze({ entryRel: toFrontendRel(s.file), backendRel: s.backend || '' });
-  if (!result?.ok) {
-    S.analyzing = false;
-    s.status = 'error'; s.claudeError = result?.error || '无法开始分析';
-    persistSessions();
-    showToast(s.claudeError);
-  }
+  const result = await api.terminalAnalyze({ entryRel: toFrontendRel(s.file), backendRel: s.backend || '', sessionId: s.claudeId });
+  if (!result?.ok) fail(result?.error || '无法开始分析');
 }
-/** 原生中断：向 TUI 发送 Esc（Claude Code 原生的打断当前回复键）。 */
+/** 取消分析：让宿主丢弃这次分析并向 TUI 发 Esc（Claude Code 原生的打断键）。 */
 export function cancelAnalysis() {
   const s = activeSession();
-  if (s?.status === 'running') {
-    void api.terminalWrite('\x1b');
-    S.analyzing = false;
-    s.status = 'idle';
-    persistSessions();
-  }
+  if (!s || s.status !== 'running') return;
+  s.status = s.analyzed ? 'done' : 'idle';
+  S.analyzing = false;
+  persistSessions();
+  // 只发 Esc 的话宿主仍在等这一轮的 end_turn：下一次点分析会被「已有分析在进行」拒绝
+  void api.terminalCancel();
 }
 
 /* ---------------- 会话：按组件创建，一组件一会话 ---------------- */

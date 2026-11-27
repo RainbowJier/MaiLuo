@@ -1,6 +1,6 @@
 <template>
   <div class="chain-item" :class="{ expanded }">
-    <div class="chain-header" @click="$emit('focus', fn.id)">
+    <div class="chain-header" @click="selectFn(fn.id)">
       <span class="method" :class="fn.method">{{ fn.method.toUpperCase() }}</span>
       <span class="fn-name">{{ fn.name }}</span>
       <span class="path">{{ fn.url }}</span>
@@ -70,7 +70,8 @@ import { seq, BAR_LETTER, BAR_TITLE } from '../chain.js';
 import { selectFn } from '../store.js';
 
 const props = defineProps({ fn: Object });
-defineEmits({ focus: id => { selectFn(id); return true; } });
+// 直接调用 store：此前写在 defineEmits 的校验函数里，而 Vue 只在开发构建里调用
+// emits 校验器，生产包里点卡片头部没有任何反应。
 
 const expanded = ref(false);
 const all = computed(() => seq(props.fn));

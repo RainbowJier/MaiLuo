@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
 import { readJson, writeJson } from './persist.mjs';
 import { detectProjects, scanVueFiles } from './project.mjs';
-import { createTerminalHost } from './terminal-host.mjs';
+import { createTerminalHost, resolveClaudeExecutable } from './terminal-host.mjs';
 import nodePty from 'node-pty';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -128,7 +128,7 @@ const terminalHost = createTerminalHost({
   debug: (line) => debugLog(line)
 });
 setInterval(() => terminalHost.tick(), 1000).unref();
-for (const action of ['start', 'write', 'resize', 'stop', 'analyze']) {
+for (const action of ['start', 'write', 'resize', 'stop', 'analyze', 'cancel']) {
   ipcMain.handle(`terminal:${action}`, async (event, data) => {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
       throw new Error('不受信任的终端请求');
@@ -171,12 +171,17 @@ ipcMain.handle('groups:load', async () => readJson('groups.json', {}));
 ipcMain.handle('groups:save', async (_e, data) => { await writeJson('groups.json', data); return true; });
 
 ipcMain.handle('claude:check', async () => {
+  // 与终端走同一个解析器（原生 claude.exe，不经 shell）：状态栏显示「已检测到」时，
+  // 终端就一定能启动；只认 PATH 里的 .cmd 垫片会让两边结论不一致。
   const { execFile } = await import('node:child_process');
-  return new Promise((resolve) => {
-    execFile('claude', ['--version'], { shell: process.platform === 'win32' }, (err, stdout) => {
-      resolve(err ? { ok: false } : { ok: true, version: String(stdout).trim() });
-    });
-  });
+  try {
+    const exe = resolveClaudeExecutable();
+    const stdout = await new Promise((resolve, reject) =>
+      execFile(exe, ['--version'], { windowsHide: true, timeout: 20000 }, (err, out) => err ? reject(err) : resolve(String(out))));
+    return { ok: true, version: stdout.trim() };
+  } catch {
+    return { ok: false };
+  }
 });
 
 /* 窗口控制 */

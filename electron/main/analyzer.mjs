@@ -58,35 +58,47 @@ export function buildPrompt(entryRel, backendRel) {
 注意：front 固定三段 vue→api→http；logic 中 branch=true 表示该逻辑点有失败中断分支；tx 取值 "begin"（事务开始）或 "in"（事务内）或 null。`;
 }
 
+/** 一份契约至少要有 一个功能；空壳/残缺的对象不算，提取要继续往后找真正的契约。 */
+const isContract = parsed => !!parsed && Array.isArray(parsed.functions) && parsed.functions.length > 0;
+
 /** 从 claude 最终输出中提取 JSON 契约（容错：多个代码块从后往前试、裸 JSON 兜底） */
 export function extractJson(text) {
   if (!text) return null;
-  const blocks = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].map(m => m[1]);
+  const blocks = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map(m => m[1]);
   for (let i = blocks.length - 1; i >= 0; i--) {
     const parsed = tryParse(blocks[i]);
-    if (parsed && parsed.functions) return parsed;
+    if (isContract(parsed)) return parsed;
   }
-  // 裸 JSON：花括号配对扫描
-  const start = text.indexOf('{');
-  if (start >= 0) {
-    let depth = 0, inStr = false, esc = false;
-    for (let i = start; i < text.length; i++) {
-      const c = text[i];
-      if (esc) { esc = false; continue; }
-      if (c === '\\') { esc = true; continue; }
-      if (c === '"') inStr = !inStr;
-      if (inStr) continue;
-      if (c === '{') depth++;
-      if (c === '}') {
-        depth--;
-        if (depth === 0) {
-          const parsed = tryParse(text.slice(start, i + 1));
-          if (parsed && parsed.functions) return parsed;
-        }
-      }
-    }
+  // 裸 JSON：从每个 '{' 起做花括号配对。模型在契约前面常有叙述文字，其中可能出现
+  // 不成对的括号或孤立的引号（如 “参数 {id}”、"POST"），所以不能只从全文第一个 '{' 扫一次；
+  // 每个候选起点各自重置字符串状态，叙述里的杂字符不会污染后面的真正契约。
+  const budget = { left: 8_000_000 };   // 扫描字符预算：病态输入（大量不成对括号）不能拖垮主进程
+  for (let start = text.indexOf('{'); start >= 0; start = text.indexOf('{', start + 1)) {
+    const end = matchingBrace(text, start, budget);
+    if (end < 0) { if (budget.left <= 0) break; continue; }
+    const candidate = text.slice(start, end + 1);
+    if (!candidate.includes('"functions"')) continue;
+    const parsed = tryParse(candidate);
+    if (isContract(parsed)) return parsed;
   }
   return null;
+}
+/** 返回与 text[start] 的 '{' 配对的 '}' 下标；字符串内的括号不算，找不到返回 -1。 */
+function matchingBrace(text, start, budget) {
+  let depth = 0, inStr = false;
+  for (let i = start; i < text.length; i++) {
+    if (--budget.left < 0) return -1;
+    const c = text[i];
+    if (inStr) {
+      if (c === '\\') i++;            // 跳过转义字符
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return i;
+  }
+  return -1;
 }
 function tryParse(s) {
   try { return JSON.parse(s); }
@@ -96,32 +108,54 @@ function tryParse(s) {
   }
 }
 
-/** 归一化契约数据（补默认值、校验结构），返回 null 表示无效 */
+/** 模型输出里的元素可能是 null / 非对象：逐个兜底，不让一条脏数据抛异常打断整份契约。 */
+const obj = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+
+/**
+ * 归一化契约数据（补默认值、校验结构），返回 null 表示无效。
+ * 对任意形状的输入都不抛异常（这里跑在主进程的定时器里，抛出会触发 Electron 的错误弹窗）。
+ */
 export function normalizeContract(raw) {
-  if (!raw || !Array.isArray(raw.functions) || !raw.functions.length) return null;
-  const functions = raw.functions.map((f, i) => ({
-    id: String(f.id || `fn${i}`),
-    name: String(f.name || `功能${i + 1}`),
-    method: ['get', 'post', 'put', 'delete'].includes(f.method) ? f.method : 'get',
-    url: String(f.url || '/'),
-    desc: String(f.desc || ''),
-    tag: Array.isArray(f.tag) && f.tag.length === 2 ? f.tag : ['success', '链路完整'],
-    front: (Array.isArray(f.front) ? f.front : []).slice(0, 3).map(s => ({
-      t: s.t || 'vue', n: String(s.n || ''), s: String(s.s || '')
-    })),
-    params: {
-      path:  arr(f.params?.path),
-      query: arr(f.params?.query),
-      body:  arr(f.params?.body),
-    },
-    logic: (Array.isArray(f.logic) ? f.logic : []).map(l => ({
-      t: ['check', 'logic', 'data'].includes(l.t) ? l.t : 'logic',
-      n: String(l.n || ''), where: String(l.where || ''),
-      branch: !!l.branch, tx: l.tx === 'begin' || l.tx === 'in' ? l.tx : null
-    })),
-    branchText: Array.isArray(f.branchText) ? f.branchText.map(String) : [],
-    clsCount: Number(f.clsCount) || 0,
-  }));
+  raw = obj(raw);
+  if (!Array.isArray(raw.functions) || !raw.functions.length) return null;
+  const usedIds = new Set();
+  const functions = raw.functions.map((item, i) => {
+    const f = obj(item);
+    const base = String(f.id || `fn${i}`);
+    // 功能 id 被 Vue 的 key 和图节点名引用，重复会让页签/节点互相覆盖
+    let id = base;
+    for (let n = 2; usedIds.has(id); n++) id = `${base}_${n}`;
+    usedIds.add(id);
+    return {
+      id,
+      name: String(f.name || `功能${i + 1}`),
+      // 模型常把方法写成大写（"POST"）：不归一的话会被静默当成 get 显示
+      method: ['get', 'post', 'put', 'delete'].includes(String(f.method || '').toLowerCase())
+        ? String(f.method).toLowerCase() : 'get',
+      url: String(f.url || '/'),
+      desc: String(f.desc || ''),
+      tag: Array.isArray(f.tag) && f.tag.length === 2 ? f.tag.map(String) : ['success', '链路完整'],
+      front: (Array.isArray(f.front) ? f.front : []).slice(0, 3).map(item => {
+        const s = obj(item);
+        return { t: s.t || 'vue', n: String(s.n || ''), s: String(s.s || '') };
+      }),
+      params: {
+        path:  arr(obj(f.params).path),
+        query: arr(obj(f.params).query),
+        body:  arr(obj(f.params).body),
+      },
+      logic: (Array.isArray(f.logic) ? f.logic : []).map(item => {
+        const l = obj(item);
+        return {
+          t: ['check', 'logic', 'data'].includes(l.t) ? l.t : 'logic',
+          n: String(l.n || ''), where: String(l.where || ''),
+          branch: !!l.branch, tx: l.tx === 'begin' || l.tx === 'in' ? l.tx : null
+        };
+      }),
+      branchText: Array.isArray(f.branchText) ? f.branchText.map(String) : [],
+      clsCount: Number(f.clsCount) || 0,
+    };
+  });
   return { file: String(raw.file || ''), functions };
 }
 function arr(a) {

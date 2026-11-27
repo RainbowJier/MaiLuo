@@ -2,7 +2,8 @@
   <div class="ct-wrap" @click="focusTerminal">
     <div ref="hostEl" class="ct-host"></div>
     <div v-if="error" class="ct-banner" role="alert">{{ error }}</div>
-    <div v-else-if="!alive" class="ct-overlay">
+    <div v-else-if="starting" class="ct-overlay"><span>正在启动 Claude Code…</span></div>
+    <div v-else-if="ended && !alive" class="ct-overlay">
       <span>会话已结束</span>
       <button @click.stop="restart">重新打开</button>
     </div>
@@ -18,8 +19,10 @@ import { S, activeSession, setTerminalState } from '../store.js';
 
 const hostEl = ref(null);
 const alive = ref(false);
+const starting = ref(false);
+const ended = ref(false);      // 终端起来过之后又退出了，才显示「会话已结束」
 const error = ref('');
-let term = null, fit = null, unsubscribe = null, observer = null, fitTimer = null, starting = false;
+let term = null, fit = null, unsubscribe = null, observer = null, fitTimer = null, startSeq = 0;
 
 const session = () => activeSession();
 
@@ -31,25 +34,35 @@ function ensureUuid(s) {
 }
 
 async function start(s = session()) {
-  if (!term || !s || !s.projectRoot || starting) return;
-  starting = true;
+  if (!term || !s || !s.projectRoot) return;
+  // 用序号而不是「正在启动就直接忽略」：连着切两个菜单（或启动时归并了重复会话）时，
+  // 后一次切换不能被前一次还没返回的 IPC 吞掉——否则终端停在旧会话上，而界面已经是新菜单，
+  // 之后的分析会注入到别的组件的对话里。
+  const seq = ++startSeq;
+  starting.value = true;
+  ended.value = false;
+  alive.value = false;
   error.value = '';
+  // 上一个终端的 alive / error 不能带进新会话：分析必须等「这个会话的终端有了输出」才注入，
+  // 否则刚切菜单就点分析会把整段提示词粘进一个还没就绪的 TUI。
+  setTerminalState({ alive: false, error: '' });
   try {
     const result = await window.api.terminalStart({
       root: s.projectRoot, sessionId: ensureUuid(s), cols: term.cols, rows: term.rows
     });
+    if (seq !== startSeq) return;   // 期间又切了会话：以最新一次为准
     if (!result?.ok) {
-      alive.value = false;
       error.value = result?.error || '无法启动原生 Claude Code 终端';
       setTerminalState({ alive: false, error: error.value });
       return;
     }
     alive.value = true;
-  } finally { starting = false; }
+  } finally {
+    if (seq === startSeq) starting.value = false;
+  }
 }
 
 function restart() {
-  alive.value = false;
   void window.api.terminalStop().finally(() => start());
 }
 
@@ -73,6 +86,7 @@ function handleEvent(event) {
     term.write(event.chunk);
   } else if (event.type === 'exit') {
     alive.value = false;
+    ended.value = true;
     setTerminalState({ alive: false, error: '' });
   }
 }
@@ -111,7 +125,7 @@ onMounted(() => {
 });
 
 watch(() => [S.activeId, session()?.claudeId, session()?.projectRoot], () => {
-  alive.value = false;
+  if (!session()?.projectRoot) { alive.value = false; return; }
   void start();
 });
 watch(alive, v => { if (v) refit(); });

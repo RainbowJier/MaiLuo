@@ -67,3 +67,25 @@ test('an activeId whose session disappeared falls back to the first remaining se
   assert.equal(result.sessions.length, 1);
   assert.equal(result.activeId, 2);
 });
+
+test('sessions of the current project are re-based onto the configured frontend dir', () => {
+  const result = canonicalizeSessions([
+    { id: 1, file: 'frontend\\src\\views\\A.vue', projectRoot: 'D:\\p' }
+  ], { frontend: 'frontend\\src\\views', root: 'D:/p' });
+  assert.equal(result.sessions[0].file, 'frontend/src/views/A.vue');
+  assert.equal(result.sessions[0].name, 'A.vue');
+});
+
+test('sessions of another project are never re-prefixed with the current frontend dir', () => {
+  // file 是相对「它自己项目」的前端目录记录的。用当前项目的前端配置去重拼，每次启动都会把
+  // 别人的路径越拼越长（web/src/… → frontend/src/views/web/src/…），而且会被存回磁盘。
+  const stored = { id: 7, file: 'web/src/views/Login.vue', projectRoot: 'D:/other', analyzed: true, data: { functions: [{ id: 'a' }] } };
+  let file = stored.file;
+  for (const frontend of ['frontend', 'frontend/src/views', 'admin']) {   // 在不同项目配置下来回启动
+    const result = canonicalizeSessions([{ ...stored, file }], { frontend, root: 'D:/current' });
+    file = result.sessions[0].file;
+  }
+  assert.equal(file, 'web/src/views/Login.vue');
+  assert.equal(canonicalizeSessions([{ ...stored, file: 'web\\src\\views\\Login.vue' }], { frontend: 'frontend', root: 'D:/current' })
+    .sessions[0].file, 'web/src/views/Login.vue', 'only separators are normalized');
+});

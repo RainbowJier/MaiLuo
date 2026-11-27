@@ -63,14 +63,17 @@ export function canonicalizeSessions(list, { frontend = '', root = '', activeId 
   const remap = new Map();
   for (const raw of Array.isArray(list) ? list : []) {
     if (!raw || typeof raw !== 'object') continue;
+    const projectRoot = raw.projectRoot || root;
+    // 其它项目的会话：file 是相对它自己项目的前端目录记录的。不能用「当前项目」的前端配置
+    // 给它重新加前缀——两个项目前端目录不同时，每次启动都会把别人的路径越拼越长，还会被存回磁盘。
+    const foreign = !!root && rootKey(projectRoot) !== rootKey(root);
     const rel = componentRel(raw.file, frontend);
     if (!rel) continue;
-    const projectRoot = raw.projectRoot || root;
     const key = `${rootKey(projectRoot)}|${componentSessionKey(rel)}`;
     const session = {
       ...raw,
       name: basename(rel),
-      file: displayFile(rel, frontend),
+      file: foreign ? String(raw.file).replace(/\\/g, '/') : displayFile(rel, frontend),
       projectRoot,
       claudeId: raw.claudeId || null,
       claudeStatus: raw.claudeStatus || 'idle',

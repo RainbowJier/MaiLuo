@@ -28,6 +28,14 @@ export const paramSummary = fn => {
   if (p.body?.length)  parts.push('Body: '  + p.body.map(i => i.name).join(', '));
   return parts.join(' · ');
 };
+/**
+ * tooltip 走 ECharts 的 HTML 渲染（innerHTML）。节点名、来源行号、URL 都是模型从被分析
+ * 项目里读出来再输出的文本，必须转义：否则源码里埋一段带 <img onerror=…> 的注释，就可能
+ * 经模型输出进到渲染进程执行，而这里的 window.api 能往一个免确认的 Claude 终端里打字。
+ * 只有我们自己拼的 <br/> 保留为标签。
+ */
+export const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export function baseNode(name, x, y, size, type, extra = {}) {
   const st = NODE_STYLE[type] || {};
@@ -60,8 +68,8 @@ export function chartOption(nodes, links) {
       textStyle: { color: '#1F1E1D', fontSize: 12 },
       extraCssText: 'box-shadow: 0 2px 8px rgba(60,50,30,0.1); border-radius: 8px; white-space: pre-wrap;',
       formatter: p => p.dataType === 'edge'
-        ? `${p.data.source} → ${p.data.target}<br/><b>${p.data.value || ''}</b>`
-        : `<b>${p.name}</b>` + (p.data.tip ? `<br/><span style="color:#83827D">${p.data.tip}</span>` : '')
+        ? `${escapeHtml(p.data.source)} → ${escapeHtml(p.data.target)}<br/><b>${escapeHtml(p.data.value)}</b>`
+        : `<b>${escapeHtml(p.name)}</b>` + (p.data.tip ? `<br/><span style="color:#83827D">${p.data.tip}</span>` : '')
     },
     series: [{
       type: 'graph', layout: 'none', roam: true,
@@ -89,7 +97,7 @@ export function buildAllGraph(functions, width = 900) {
     nodes.push(baseNode(httpName, httpX, y, 42, 'http', {
       bg: METHOD_COLOR[fn.method],
       short: `${fn.name}\n${fn.method.toUpperCase()} ${tail}`,
-      tip: `${fn.url}<br>${paramSummary(fn)}`
+      tip: `${escapeHtml(fn.url)}<br>${escapeHtml(paramSummary(fn))}`
     }));
     links.push(baseLink(entryName, httpName, fn.method.toUpperCase(), { showLabel: false }));
     let prev = httpName;
@@ -97,7 +105,7 @@ export function buildAllGraph(functions, width = 900) {
       const name = `${fn.id}:${i}:${step.n}`;
       nodes.push(baseNode(name, startX + i * gap, y, 38, step.t, {
         short: cut(step.n, 11),
-        tip: step.where,
+        tip: escapeHtml(step.where),
         pos: i % 2 === 0 ? 'bottom' : 'top',   // 上下交错，避免相邻标签压字
         fSize: 10.5
       }));
@@ -121,7 +129,7 @@ export function buildFnGraph(fn) {
     const name = `${i}. ${step.n}`;
     const pos = i % 2 === 0 ? 'bottom' : 'top';
     nodes.push(baseNode(name, startX + i * gap, yMid, step.t === 'vue' ? 48 : 40, step.t, {
-      bg, tip: stepLoc(step), short: cut(step.n, 14), pos, fSize: 10.5
+      bg, tip: escapeHtml(stepLoc(step)), short: cut(step.n, 14), pos, fSize: 10.5
     }));
     if (i > 0) {
       const edgeLabel = i === 1 ? '调用' : (i === 2 ? fn.method.toUpperCase() : '');

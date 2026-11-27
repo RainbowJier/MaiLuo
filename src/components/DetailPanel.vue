@@ -16,7 +16,8 @@
             <path d="M16.5 8A6.5 6.5 0 1 0 17 12"/><path d="M17 4v4h-4"/>
           </svg>
         </button>
-        <button class="btn-primary" :disabled="!canAnalyze" @click="startAnalysis">
+        <!-- 重新分析期间上一次的结果仍然显示，没有「分析中」占位页来放取消按钮：由这个主按钮承担取消 -->
+        <button class="btn-primary" :disabled="cancelable ? false : !canAnalyze" @click="cancelable ? cancelAnalysis() : startAnalysis()">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M2.5 8s2.4-4.5 5.5-4.5S13.5 8 13.5 8s-2.4 4.5-5.5 4.5S2.5 8 2.5 8z"/><circle cx="8" cy="8" r="2"/>
           </svg>
@@ -121,7 +122,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { S, stats, startAnalysis, cancelAnalysis, selectFn, currentFunctions, graphSubtitle, fileName, activeSession, showToast } from '../store.js';
+import { S, persistSessions, stats, startAnalysis, cancelAnalysis, selectFn, currentFunctions, graphSubtitle, fileName, activeSession, showToast } from '../store.js';
 import ChainGraph from './ChainGraph.vue';
 import ChainCard from './ChainCard.vue';
 
@@ -141,14 +142,20 @@ const subtitlePath = computed(() => {
 });
 const canAnalyze = computed(() => !S.analyzing && !!(S.selectedFile || activeSession()?.file) && !!S.config.root &&
   (!activeSession()?.projectRoot || activeSession().projectRoot === S.config.root));
-const analyzeLabel = computed(() => S.analyzing ? '分析中…' : (hasResult.value ? '重新分析' : '开始分析'));
+const cancelable = computed(() => S.analyzing && hasResult.value);
+const analyzeLabel = computed(() =>
+  S.analyzing ? (hasResult.value ? '取消分析' : '分析中…') : (hasResult.value ? '重新分析' : '开始分析'));
 const sessionError = computed(() => activeSession()?.status === 'error' ? '上次分析失败，可重试（详见终端）' : '');
 const visibleFunctions = computed(() =>
   S.currentFn === 'all' ? functions.value : functions.value.filter(f => f.id === S.currentFn));
-const graphKey = computed(() => `${S.activeId}|${S.currentFn}|${functions.value.length}`);
+// dataRev：重新分析后功能数量可能不变，仅靠数量无法触发链路图重建
+const graphKey = computed(() => `${S.activeId}|${S.currentFn}|${functions.value.length}|${S.dataRev}`);
 function resetCurrent() {
   const s = activeSession();
-  if (s) { s.analyzed = false; s.data = null; s.status = 'idle'; }
+  if (s) {
+    s.analyzed = false; s.data = null; s.status = 'idle'; s.claudeError = '';
+    persistSessions();   // 没有别的时机会保存：不落盘的话重启后结果又回来了
+  }
   S.currentFn = 'all';
   showToast('已重置当前会话');
 }

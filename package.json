@@ -12,7 +12,8 @@
     "smoke": "node scripts/smoke.mjs",
     "postinstall": "node scripts/patch-node-pty.mjs",
     "rebuild:pty": "node scripts/patch-node-pty.mjs && node -e \"const{spawnSync}=require('child_process');const env={...process.env};delete env.NoDefaultCurrentDirectoryInExePath;const r=spawnSync('npx',['--yes','@electron/rebuild','-f','-w','node-pty','-v','33.4.11'],{stdio:'inherit',env,shell:process.platform==='win32'});process.exit(r.status||0)\"",
-    "test:workspace": "node --test scripts/terminal-host.test.mjs scripts/sessions.test.mjs"
+    "test": "node --test scripts/terminal-host.test.mjs scripts/analyzer.test.mjs scripts/sessions.test.mjs scripts/chain.test.mjs scripts/store.test.mjs",
+    "test:workspace": "npm run test"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

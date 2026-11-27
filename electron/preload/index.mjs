@@ -20,6 +20,7 @@ const api = {
   terminalResize: (cols, rows) => ipcRenderer.invoke('terminal:resize', { cols, rows }),
   terminalStop: () => ipcRenderer.invoke('terminal:stop'),
   terminalAnalyze: (p) => ipcRenderer.invoke('terminal:analyze', p),
+  terminalCancel: () => ipcRenderer.invoke('terminal:cancel'),
   onTerminalEvent: (cb) => {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on('terminal:event', listener);
